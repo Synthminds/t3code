@@ -4,6 +4,10 @@ SynthOS brings GCH's mission workflow into the Night Riders control room. **GCH*
 
 GCH missions run inside this application, so you do not need to start the old GCH daemon separately. Use **Create mission** in SynthOS or the `gch synthos` commands below to enter that workflow. Ordinary T3 threads and commands entered directly in its terminal do not automatically enter the GCH mission controller.
 
+## Desktop app
+
+SynthOS also runs as a native desktop application through its Electron shell, with the same cockpit, editor, terminal, and GCH missions. The Apple silicon package includes the local server and uses a separate app identity and data directory from upstream T3. See the [macOS build guide](../operations/synthos-desktop.md) to produce this fork's DMG or ZIP. Signing and notarization are separate release steps; an unsigned package does not provide signed-app passkeys.
+
 ## Start this checkout
 
 From the repository root, install [Vite+](https://viteplus.dev/guide/) and use the Node version required by the repository, then run:

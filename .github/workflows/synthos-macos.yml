@@ -1,0 +1,116 @@
+name: SynthOS macOS Apple silicon
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: synthos-macos-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      T3CODE_DESKTOP_SIGNED: "false"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      T3CODE_TELEMETRY_ENABLED: "false"
+    steps:
+      - name: Check out the selected source
+        # checkout's auth cleanup fails on orphan gitlinks in .repos, even when sparse-excluded.
+        shell: bash
+        env:
+          CHECKOUT_TOKEN: ${{ github.token }}
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          askpass="$(mktemp "$RUNNER_TEMP/synthos-git-askpass.XXXXXX")"
+          trap 'rm -f "$askpass"' EXIT
+          cat > "$askpass" <<'SH'
+          #!/bin/sh
+          case "$1" in
+            *Username*) printf '%s\n' x-access-token ;;
+            *Password*) printf '%s\n' "$CHECKOUT_TOKEN" ;;
+            *) exit 1 ;;
+          esac
+          SH
+          chmod 700 "$askpass"
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          GIT_ASKPASS="$askpass" git -c credential.helper= fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git checkout --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Verify native Apple silicon tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+          xcode-select -p
+          xcrun --find clang
+          xcrun --find iconutil
+          command -v sips
+          command -v hdiutil
+
+      - name: Install the pinned JavaScript toolchain
+        uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --frozen-lockfile --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+
+      - name: Install native Rust target
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+
+      - name: Build unsigned SynthOS DMG and ZIP
+        run: vp run dist:desktop:artifact --platform mac --target dmg --arch arm64 --output-dir release/synthos-macos --verbose
+
+      - name: Verify packaged app identity and architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          images=(release/synthos-macos/*.dmg)
+          test "${#images[@]}" -eq 1 && test -f "${images[0]}"
+          mount="$RUNNER_TEMP/synthos-dmg"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "${images[0]}"
+          trap 'hdiutil detach "$mount" >/dev/null || true' EXIT
+          apps=("$mount"/*.app)
+          test "${#apps[@]}" -eq 1 && test -d "${apps[0]}"
+          plist="${apps[0]}/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = com.synthminds.synthos
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")
+          test "$(lipo -archs "${apps[0]}/Contents/MacOS/$executable")" = arm64
+
+      - name: Record source identity and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'JS'
+          import { writeFileSync } from 'node:fs';
+          writeFileSync('release/synthos-macos/build-info.json', JSON.stringify({
+            product: 'SynthOS', repository: process.env.GITHUB_REPOSITORY,
+            commit: process.env.GITHUB_SHA, run: process.env.GITHUB_RUN_ID,
+            platform: 'darwin', architecture: 'arm64',
+            developerIdSigned: false, notarized: false, launchTested: false,
+          }, null, 2) + '\n');
+          JS
+          cd release/synthos-macos
+          shasum -a 256 ./*.dmg ./*.zip ./build-info.json > SHA256SUMS
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: SynthOS-macos-arm64-${{ github.sha }}
+          path: |
+            release/synthos-macos/*.dmg
+            release/synthos-macos/*.zip
+            release/synthos-macos/build-info.json
+            release/synthos-macos/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
