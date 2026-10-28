@@ -23,6 +23,7 @@ import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import { GCH_POLICY_INSPECTION } from "../synthos/gchPolicy.ts";
 import { readSynthosInput, requestSynthos, type SynthosCliRequest } from "./synthos.ts";
 
 const origin = "http://127.0.0.1:43210";
@@ -273,45 +274,54 @@ describe("SynthOS CLI authenticated transport", () => {
       }),
   );
 
-  it.effect("reads list and detail through the same HTTP routes with read-only sessions", () =>
-    Effect.gen(function* () {
-      const auth = authFixture();
-      const paths: string[] = [];
-      const client = HttpClient.make((request) => {
-        assert.equal(request.method, "GET");
-        assert.equal(request.headers.authorization, "Bearer temporary-fixture-token");
-        const url = new URL(request.url);
-        assert.equal(url.origin, origin);
-        paths.push(url.pathname);
-        return Effect.succeed(
-          HttpClientResponse.fromWeb(
-            request,
-            Response.json(
-              url.pathname.endsWith("workflows") ? { workflows: [] } : { workflow, events: [] },
+  it.effect(
+    "reads policy, list and detail through the same HTTP routes with read-only sessions",
+    () =>
+      Effect.gen(function* () {
+        const auth = authFixture();
+        const paths: string[] = [];
+        const client = HttpClient.make((request) => {
+          assert.equal(request.method, "GET");
+          assert.equal(request.headers.authorization, "Bearer temporary-fixture-token");
+          const url = new URL(request.url);
+          assert.equal(url.origin, origin);
+          paths.push(url.pathname);
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              Response.json(
+                url.pathname.endsWith("policy")
+                  ? GCH_POLICY_INSPECTION
+                  : url.pathname.endsWith("workflows")
+                    ? { workflows: [] }
+                    : { workflow, events: [] },
+              ),
             ),
-          ),
-        );
-      });
-      const run = (request: SynthosCliRequest) =>
-        requestSynthos(origin, request).pipe(
-          Effect.provide(auth.layer),
-          Effect.provideService(HttpClient.HttpClient, client),
-        );
-      assert.deepEqual(yield* run({ type: "list" }), { workflows: [] });
-      assert.deepEqual(yield* run({ type: "get", workflowId: workflow.id }), {
-        workflow,
-        events: [],
-      });
-      assert.deepEqual(paths, [
-        "/api/synthos/workflows",
-        "/api/synthos/workflows/workflow%3Afixture",
-      ]);
-      assert.deepEqual(auth.issuedScopes, [
-        [AuthOrchestrationReadScope],
-        [AuthOrchestrationReadScope],
-      ]);
-      assert.deepEqual(auth.revoked, [sessionId, sessionId]);
-    }),
+          );
+        });
+        const run = (request: SynthosCliRequest) =>
+          requestSynthos(origin, request).pipe(
+            Effect.provide(auth.layer),
+            Effect.provideService(HttpClient.HttpClient, client),
+          );
+        assert.deepEqual(yield* run({ type: "list" }), { workflows: [] });
+        assert.deepEqual(yield* run({ type: "policy" }), GCH_POLICY_INSPECTION);
+        assert.deepEqual(yield* run({ type: "get", workflowId: workflow.id }), {
+          workflow,
+          events: [],
+        });
+        assert.deepEqual(paths, [
+          "/api/synthos/workflows",
+          "/api/synthos/policy",
+          "/api/synthos/workflows/workflow%3Afixture",
+        ]);
+        assert.deepEqual(auth.issuedScopes, [
+          [AuthOrchestrationReadScope],
+          [AuthOrchestrationReadScope],
+          [AuthOrchestrationReadScope],
+        ]);
+        assert.deepEqual(auth.revoked, [sessionId, sessionId, sessionId]);
+      }),
   );
 
   it.effect(

@@ -1,6 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- These pure policy artifacts require a portable SHA-256 identity.
 import * as NodeCrypto from "node:crypto";
 import * as Schema from "effect/Schema";
+import type { SynthosPolicy } from "@t3tools/contracts";
 import sources from "./gchPolicySources.json" with { type: "json" };
 
 const hash = (value: string) => NodeCrypto.createHash("sha256").update(value).digest("hex");
@@ -28,6 +29,16 @@ export const GCH_POLICY = Object.freeze({
   sources: sources.sources,
   enforced,
   limitations,
+});
+
+// Inspection metadata must not change the fingerprint held by existing workflow snapshots.
+export const GCH_POLICY_INSPECTION: SynthosPolicy = Object.freeze({
+  ...GCH_POLICY,
+  applicationScope: "synthos_workflows",
+  sourceRepository: sources.sourceRepository,
+  sourceCommit: sources.sourceCommit,
+  capturedAt: sources.capturedAt,
+  canonicalRulesSha256: sources.canonicalRulesSha256,
 });
 
 export class GchPacketError extends Schema.TaggedError<GchPacketError>()("GchPacketError", {

@@ -12,6 +12,7 @@ import {
   type SynthosCommandInput,
   type SynthosCreateInput,
   type SynthosEvent,
+  type SynthosPolicy,
   type SynthosRole,
   type SynthosStage,
   type SynthosWorkflow as Workflow,
@@ -25,7 +26,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as SynthosRuntime from "./SynthosRuntime.ts";
-import { createGchPacket, GCH_POLICY } from "./gchPolicy.ts";
+import { createGchPacket, GCH_POLICY, GCH_POLICY_INSPECTION } from "./gchPolicy.ts";
 
 export class SynthosWorkflowError extends Schema.TaggedError<SynthosWorkflowError>()(
   "SynthosWorkflowError",
@@ -58,6 +59,7 @@ type WorkflowError = SynthosWorkflowError | SynthosRuntime.SynthosRuntimeError;
 export class SynthosWorkflow extends Context.Service<
   SynthosWorkflow,
   {
+    readonly policy: Effect.Effect<SynthosPolicy>;
     readonly create: (
       input: SynthosCreateInput,
       actor: SynthosActor,
@@ -850,7 +852,14 @@ const make = Effect.gen(function* () {
       );
     }
   }).pipe(permit.withPermits(1));
-  return SynthosWorkflow.of({ create, list, get, command, runDueWork });
+  return SynthosWorkflow.of({
+    policy: Effect.succeed(GCH_POLICY_INSPECTION),
+    create,
+    list,
+    get,
+    command,
+    runDueWork,
+  });
 });
 export const layer = Layer.effect(SynthosWorkflow, make);
 export const layerScheduler = Layer.effectDiscard(

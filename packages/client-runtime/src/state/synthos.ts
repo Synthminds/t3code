@@ -49,6 +49,15 @@ export function createSynthosRequestCommand<R, E>(
         RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
       );
       const common = { prepared, signer, remoteAuthorization, timeoutMs: 30_000 };
+      if (input.path === "/api/synthos/policy" && input.method === "GET") {
+        return yield* executeAuthenticatedEnvironmentHttpRequest({
+          ...common,
+          group: "synthos",
+          method: "GET",
+          url: (urls) => urls.getPolicy(),
+          request: ({ client, headers }) => client.getPolicy({ headers }),
+        });
+      }
       if (input.path === "/api/synthos/knowledge" && input.method === "POST") {
         const payload = yield* decodeKnowledgeCommand(input.body);
         return yield* executeAuthenticatedEnvironmentHttpRequest({

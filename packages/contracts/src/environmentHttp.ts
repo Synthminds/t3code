@@ -63,6 +63,7 @@ import {
   SynthosCreateInput,
   SynthosCommandInput,
   SynthosRequestError,
+  SynthosPolicy,
 } from "./synthos.ts";
 import { SynthosKnowledgeCommand, SynthosKnowledgeResult } from "./synthosKnowledge.ts";
 import {
@@ -851,6 +852,13 @@ const SynthosHttpErrors = [
   EnvironmentInternalError,
 ] as const;
 class EnvironmentSynthosHttpApi extends HttpApiGroup.make("synthos")
+  .add(
+    HttpApiEndpoint.get("getPolicy", "/api/synthos/policy", {
+      headers: OptionalBearerHeaders,
+      success: SynthosPolicy,
+      error: SynthosHttpErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
   .add(
     HttpApiEndpoint.get("listWorkflows", "/api/synthos/workflows", {
       headers: OptionalBearerHeaders,
