@@ -75,6 +75,10 @@ import Migration0069 from "./Migrations/069_ThreadMessageSearch.ts";
 import Migration0070 from "./Migrations/070_PeerLinks.ts";
 import Migration0071 from "./Migrations/071_PeerLinkFence.ts";
 import Migration0072 from "./Migrations/072_WaitingLinkRequestIndex.ts";
+import Migration0073 from "./Migrations/073_SynthosWorkflows.ts";
+import Migration0074 from "./Migrations/074_SynthosConnections.ts";
+import Migration0075 from "./Migrations/075_SynthosPolicySnapshots.ts";
+import Migration0076 from "./Migrations/076_SynthosKnowledge.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -150,6 +154,10 @@ const migrationEntries = [
   [70, "PeerLinks", Migration0070],
   [71, "PeerLinkFence", Migration0071],
   [72, "WaitingLinkRequestIndex", Migration0072],
+  [73, "SynthosWorkflows", Migration0073],
+  [74, "SynthosConnections", Migration0074],
+  [75, "SynthosPolicySnapshots", Migration0075],
+  [76, "SynthosKnowledge", Migration0076],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

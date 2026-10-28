@@ -1,142 +1,46 @@
-# T3 Code
+# SynthOS · Night Riders
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+SynthOS brings the GCH multi-model workflow and Night Riders cockpit into a customized [T3 Code](https://github.com/pingdotgg/t3code) workspace. T3 owns agent execution, terminals, projects and checkpoints. SynthOS adds durable missions, knowledge and memory connections, reviewed mail, and device intake.
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity. If they're set up on your computer, T3 Code can control them.
+The lead car stays at the top of the cockpit. Search, grep and documentation motorcycles represent their assigned roles; activity lights follow observed work. Midnight Protocol extends the synthwave palette across the editor, terminal and settings.
 
-## "Wait, what are you selling me?"
+## Run this fork
 
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
+Install [Vite+](https://viteplus.dev/guide/) and use the Node and package-manager versions pinned in `package.json`.
 
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
-
-## Installation
-
-> [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
-> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
-
-### Command line
-
-```bash
-curl -fsSL https://t3.codes/install.sh | sh
-```
-
-On Windows, in PowerShell:
-
-```powershell
-irm https://t3.codes/install.ps1 | iex
-```
-
-Then run `t3` to start the server and open the local web app. `t3 service install` keeps it running in the background, `t3 update` moves to a newer release, and `t3 --help` has the full reference.
-
-To try it once without installing, run `npx t3@latest` instead.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
-
-```bash
-winget install T3Tools.T3Code
-```
-
-#### Windows (`scoop`)
-
-```bash
-scoop install extras/t3code
-```
-
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Debian, Ubuntu (`.deb`)
-
-Download the `.deb` from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), then:
-
-```bash
-sudo apt install ./T3-Code-*.deb
-```
-
-#### Arch Linux (AUR)
-
-Stable:
-
-```bash
-yay -S t3code-bin
-```
-
-Nightly:
-
-```bash
-yay -S t3code-nightly-bin
-```
-
-The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
-
-## Documentation
-
-Full docs live in [docs/](./docs). There's no docs site yet.
-
-- [FAQ](./docs/user/faq.md)
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Project settings](./docs/user/project-settings.md)
-- [Appearance preferences](./docs/user/appearance.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Connect Claude Code, Codex, ChatGPT and other agents over MCP](./docs/user/outside-agents.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
-- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- [Run T3 Code as a background service](./docs/user/background-service.md)
-
-Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
-
-## If you REALLY want to contribute still.... read this first
-
-### Install `vp`
-
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
-
-```bash
-curl -fsSL https://vite.plus | bash
-```
-
-#### Windows
-
-```bash
-irm https://vite.plus/ps1 | iex
-```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
-
-```bash
+```sh
 vp i
+vp run dev
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
+Open the URL printed by the runner, complete pairing, then choose **SynthOS** in the sidebar or visit `/synthos` on that origin. Provider logins belong to the host running the server.
 
-Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
+To build and run the local CLI with the bundled web app:
 
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+```sh
+vp run --filter t3 build
+node apps/server/dist/bin.mjs --no-browser
+```
+
+The CLI is named `gch`; this checkout runs it directly through the entrypoint above. Upstream T3 installers and automatic release updates do not install this fork. SynthOS uses its own `.synthos` data directory and desktop identity. Upstream telemetry is disabled by default.
+
+## Use the platform
+
+- [Cockpit, model roles, tools, knowledge and AgentMail](docs/user/synthos.md)
+- [Fieldy, Harness and G2 companion setup](docs/user/synthos-devices.md)
+- [Always-on Linux service from this checkout](scripts/synthos-service/README.md)
+- [T3 workspace and provider documentation](docs/README.md)
+
+Workflows use configured provider IDs, frozen GCH task packets, persistent budgets, candidate checkpoints and explicit human decisions. Model availability and tool installation remain separate from authentication and observed activity. The supply deck includes the original 41 tools; terminal handoffs use the existing T3 terminal.
+
+## Qualification boundaries
+
+A prepared workflow does not start a provider call. Starting it can consume a subscription or API allowance. Missing usage or authoritative check receipts holds the workflow. Native provider APIs do not provide a universal hard spend cap or physically read-only role sandbox. Production publishing and automatic merge are not enabled by approving a local evidence package.
+
+Connection adapters and companion transports require the intended credentials and hardware for live qualification. The browser cockpit also serves phone-sized screens; a customized native mobile release is not included. No account credentials or production device pairing are bundled.
+
+## Provenance
+
+GCH source is pinned to [Synthminds/GCH at a11ebfb](https://github.com/Synthminds/GCH/tree/a11ebfb89bbc7fcf9cb47df54454b66412ddeedc). The policy snapshot retains the canonical rules 1.9 text, source hashes for prior editions, and the 3.0 factory lineage. Workers receive the current kernel, not a concatenation of conflicting historical rules. Host limits and current human instructions retain precedence.
+
+T3 Code remains the upstream foundation at commit `9e09926d97824179d97311d1a810c6b5bb60d2d1`. Its [MIT license](LICENSE) and third-party notices remain intact. The [upstream README](https://github.com/pingdotgg/t3code/blob/9e09926d97824179d97311d1a810c6b5bb60d2d1/README.md) describes the original product and its public releases.

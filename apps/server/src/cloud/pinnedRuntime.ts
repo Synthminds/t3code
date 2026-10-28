@@ -1,24 +1,12 @@
-import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
-import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-
-import {
-  CLI_RELEASE_CHECKSUMS_FILE,
-  cliArchiveFileName,
-  cliArchivePlatformKey,
-  cliArchiveTarCommand,
-  cliReleaseDownloadBaseUrl,
-  parseChecksums,
-} from "@t3tools/shared/cliRelease";
+import type { HttpClient } from "effect/http";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
@@ -26,9 +14,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import { isExactServiceVersion, parseServiceState, SERVICE_STATE_FILE } from "./serviceProtocol.ts";
 
 const PINNED_RUNTIME_DIR = "runtime";
-const PINNED_RUNTIME_INSTALL_TIMEOUT = Duration.minutes(10);
-const PINNED_RUNTIME_DOWNLOAD_STALL_TIMEOUT = Duration.minutes(1);
-const PINNED_RUNTIME_ARCHIVE_FILE = "t3-runtime-archive";
+export const PINNED_RUNTIME_IDENTITY_FILE = ".synthos-runtime";
 // Separate layers share one install lock across this process.
 const pinnedRuntimeInstallLock = Semaphore.makeUnsafe(1);
 
@@ -96,8 +82,6 @@ export type PinnedRuntimeProgress =
   | { readonly stage: "download"; readonly received: number; readonly total: number | undefined }
   | { readonly stage: "verify" | "extract" | "validate" | "cached" };
 
-/** Tar writes the executable before native packages; only a validated install gets a sentinel. */
-
 interface PinnedRuntimeInstallInput {
   readonly baseDir: string;
   readonly version: string;
@@ -114,250 +98,36 @@ interface PinnedRuntimeInstallInput {
   readonly onProgress?: (progress: PinnedRuntimeProgress) => void;
 }
 
-const fetchReleaseAsset = Effect.fn("cloud.pinned_runtime.fetch_release_asset")(function* (
-  httpClient: HttpClient.HttpClient,
-  url: string,
-  step: string,
-  onProgress?: (progress: PinnedRuntimeProgress) => void,
-) {
-  // Bound stalls while holding the install lock, but allow transfers that keep
-  // receiving bytes to finish regardless of their total duration.
-  return yield* httpClient.execute(HttpClientRequest.get(url)).pipe(
-    Effect.flatMap(HttpClientResponse.filterStatusOk),
-    Effect.timeout(PINNED_RUNTIME_DOWNLOAD_STALL_TIMEOUT),
-    Effect.flatMap(
-      Effect.fn(function* (response) {
-        const length = Number(response.headers["content-length"]);
-        const total = Number.isFinite(length) && length > 0 ? length : undefined;
-        let received = 0;
-        onProgress?.({ stage: "download", received, total });
-        const chunks = yield* response.stream.pipe(
-          Stream.timeoutOrElse({
-            duration: PINNED_RUNTIME_DOWNLOAD_STALL_TIMEOUT,
-            orElse: () => Stream.fail(new Cause.TimeoutError()),
-          }),
-          Stream.tap((chunk) =>
-            Effect.sync(() => {
-              received += chunk.byteLength;
-              onProgress?.({ stage: "download", received, total });
-            }),
-          ),
-          Stream.runCollect,
-        );
-        if (total === undefined && received > 0) {
-          onProgress?.({ stage: "download", received, total: received });
-        }
-        const bytes = new Uint8Array(received);
-        let offset = 0;
-        for (const chunk of chunks) {
-          bytes.set(chunk, offset);
-          offset += chunk.byteLength;
-        }
-        return bytes;
-      }),
-    ),
-    Effect.mapError(
-      (cause) =>
-        new PinnedRuntimeInstallError({
-          step: cause._tag === "TimeoutError" ? `${step} (timed out)` : step,
-          cause,
-        }),
-    ),
-  );
-});
-
-const installFromArchive = Effect.fn("cloud.pinned_runtime.install_archive")(function* (
-  input: PinnedRuntimeInstallInput,
-  stagingDir: string,
-) {
-  const { fs, path } = input;
-  const platformKey = cliArchivePlatformKey(input.platform, input.arch);
-  if (platformKey === undefined) {
-    return yield* new PinnedRuntimeInstallError({
-      step: `selecting a t3 release archive for ${input.platform}-${input.arch}`,
-    });
-  }
-  const httpClient = input.httpClient;
-  const baseUrl = cliReleaseDownloadBaseUrl(input.version, input.releaseBaseUrl);
-  const fileName = cliArchiveFileName(input.version, platformKey);
-
-  input.onProgress?.({ stage: "download", received: 0, total: undefined });
-  const checksums = parseChecksums(
-    new TextDecoder().decode(
-      yield* fetchReleaseAsset(
-        httpClient,
-        `${baseUrl}/${CLI_RELEASE_CHECKSUMS_FILE}`,
-        "downloading the t3 release checksums",
-      ),
-    ),
-  );
-  const expected = checksums.get(fileName);
-  if (expected === undefined) {
-    return yield* new PinnedRuntimeInstallError({
-      step: `finding ${fileName} in the t3 release checksums`,
-    });
-  }
-  const archive = yield* fetchReleaseAsset(
-    httpClient,
-    `${baseUrl}/${fileName}`,
-    "downloading the t3 release archive",
-    input.onProgress,
-  );
-  input.onProgress?.({ stage: "verify" });
-  const digest = yield* Effect.tryPromise({
-    try: () => crypto.subtle.digest("SHA-256", archive),
-    catch: (cause) =>
-      new PinnedRuntimeInstallError({ step: "verifying the t3 release archive", cause }),
-  });
-  if (Hex.encode(new Uint8Array(digest)) !== expected) {
-    return yield* new PinnedRuntimeInstallError({
-      step: "verifying the t3 release archive checksum",
-    });
-  }
-
-  const archivePath = path.join(stagingDir, PINNED_RUNTIME_ARCHIVE_FILE);
-  yield* fs
-    .writeFile(archivePath, archive)
-    .pipe(
-      Effect.mapError(
-        (cause) => new PinnedRuntimeInstallError({ step: "writing the t3 release archive", cause }),
-      ),
-    );
-  input.onProgress?.({ stage: "extract" });
-  const extractStep = "extracting the t3 release archive";
-  // Strip the archive's stem directory so the executable lands at <versionDir>/t3.
-  yield* input.runner
-    .run({
-      command: cliArchiveTarCommand(input.platform, process.env),
-      args: ["-xf", archivePath, "-C", stagingDir, "--strip-components=1"],
-      timeout: PINNED_RUNTIME_INSTALL_TIMEOUT,
-    })
-    .pipe(
-      Effect.mapError((cause) => new PinnedRuntimeInstallError({ step: extractStep, cause })),
-      Effect.filterOrFail(
-        (result) => result.code === 0,
-        (result) =>
-          new PinnedRuntimeInstallError({
-            step: extractStep,
-            exitCode: Number(result.code),
-            stdoutLength: result.stdout.length,
-            stderrLength: result.stderr.length,
-          }),
-      ),
-    );
-  yield* fs.remove(archivePath, { force: true }).pipe(Effect.ignore);
-});
-
 const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(function* (
   input: PinnedRuntimeInstallInput,
 ) {
-  const { fs } = input;
-  const paths = pinnedRuntimePaths(input.path, input.baseDir, input.version, input.platform);
-  const [versionDirExists, entryExists, sentinel] = yield* Effect.all([
-    fs.exists(paths.versionDir),
+  const { fs, path } = input;
+  const paths = pinnedRuntimePaths(path, input.baseDir, input.version, input.platform);
+  const [entryExists, sentinel, identity] = yield* Effect.all([
     fs.exists(paths.entryPath),
     fs.readFileString(paths.sentinelPath).pipe(Effect.option),
+    fs
+      .readFileString(path.join(paths.versionDir, PINNED_RUNTIME_IDENTITY_FILE))
+      .pipe(Effect.option),
   ]).pipe(
     Effect.mapError(
       (cause) => new PinnedRuntimeInstallError({ step: "checking the pinned runtime", cause }),
     ),
   );
-  const alreadyPinned =
-    entryExists && Option.isSome(sentinel) && sentinel.value.trim() === input.version;
-  if (alreadyPinned) {
+  if (
+    entryExists &&
+    Option.getOrUndefined(sentinel)?.trim() === input.version &&
+    Option.getOrUndefined(identity)?.trim() === input.version
+  ) {
     input.onProgress?.({ stage: "cached" });
     yield* input.validate(paths);
     return paths;
   }
-  if (versionDirExists) {
-    yield* fs.remove(paths.versionDir, { recursive: true, force: true }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new PinnedRuntimeInstallError({
-            step: "removing an incomplete pinned runtime",
-            cause,
-          }),
-      ),
-    );
-  }
-
-  const versionsDir = input.path.dirname(paths.versionDir);
-  yield* fs.makeDirectory(versionsDir, { recursive: true }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new PinnedRuntimeInstallError({
-          step: "preparing the pinned runtime directory",
-          cause,
-        }),
-    ),
-  );
-  const stagingDir = yield* fs
-    .makeTempDirectory({
-      directory: versionsDir,
-      prefix: ".staging-",
-    })
-    .pipe(
-      Effect.mapError(
-        (cause) =>
-          new PinnedRuntimeInstallError({
-            step: "preparing the pinned runtime directory",
-            cause,
-          }),
-      ),
-    );
-  const stagingPaths: PinnedRuntimePaths = {
-    versionDir: stagingDir,
-    entryPath: input.path.join(stagingDir, input.path.relative(paths.versionDir, paths.entryPath)),
-    sentinelPath: input.path.join(stagingDir, ".install-complete"),
-  };
-
-  return yield* Effect.gen(function* () {
-    yield* installFromArchive(input, stagingDir);
-
-    input.onProgress?.({ stage: "validate" });
-    yield* input.validate(stagingPaths);
-    yield* fs
-      .writeFileString(stagingPaths.sentinelPath, `${input.version}\n`)
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new PinnedRuntimeInstallError({ step: "recording the completed install", cause }),
-        ),
-      );
-    const published = yield* fs.rename(stagingDir, paths.versionDir).pipe(
-      Effect.as(true),
-      Effect.catch((cause) =>
-        Effect.all([
-          fs.exists(paths.entryPath),
-          fs.readFileString(paths.sentinelPath).pipe(Effect.option),
-        ]).pipe(
-          Effect.mapError(
-            (checkCause) =>
-              new PinnedRuntimeInstallError({
-                step: "checking a concurrently published pinned runtime",
-                cause: checkCause,
-              }),
-          ),
-          Effect.flatMap(([publishedEntryExists, publishedSentinel]) =>
-            publishedEntryExists &&
-            Option.isSome(publishedSentinel) &&
-            publishedSentinel.value.trim() === input.version
-              ? Effect.succeed(false)
-              : Effect.fail(
-                  new PinnedRuntimeInstallError({
-                    step: "publishing the pinned runtime",
-                    cause,
-                  }),
-                ),
-          ),
-        ),
-      ),
-    );
-    if (!published) yield* input.validate(paths);
-    return paths;
-  }).pipe(
-    Effect.ensuring(fs.remove(stagingDir, { recursive: true, force: true }).pipe(Effect.ignore)),
-  );
+  return yield* new PinnedRuntimePreflightBlockedError({
+    version: input.version,
+    reason:
+      "SynthOS runtime downloads are disabled. Run the fork from its source checkout; use scripts/synthos-service/run.mjs --print-unit for the Linux source service. Managed runtime upgrades require a separately packaged SynthOS runtime.",
+  });
 });
 
 export const ensurePinnedRuntimeInstalled = (input: PinnedRuntimeInstallInput) =>

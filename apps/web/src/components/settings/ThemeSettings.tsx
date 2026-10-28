@@ -1,3 +1,4 @@
+import { MIDNIGHT_PROTOCOL_THEME } from "@t3tools/shared/themePalettes";
 import {
   CheckIcon,
   CopyIcon,
@@ -55,6 +56,7 @@ import {
 import { ThemeWireframe } from "./ThemeWireframe";
 
 const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
+  MIDNIGHT_PROTOCOL_THEME,
   T3_CHAT_THEME,
   GROVE_THEME,
   OCEAN_THEME,

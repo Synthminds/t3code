@@ -21,6 +21,27 @@ import * as DesktopUpdates from "./DesktopUpdates.ts";
 import { flushCallbacks, makeHarness } from "./updatesTestHarness.ts";
 
 describe("DesktopUpdates", () => {
+  it.effect("keeps fork updates disabled outside the local mock feed", () => {
+    const harness = makeHarness({
+      env: { T3CODE_DESKTOP_MOCK_UPDATES: "false", T3CODE_DISABLE_AUTO_UPDATE: "false" },
+    });
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        for (const state of [yield* updates.getState, yield* updates.setChannel("nightly")]) {
+          assert.isFalse(state.enabled);
+          assert.equal(state.status, "disabled");
+          assert.include(state.message, "SynthOS");
+        }
+        assert.isFalse((yield* updates.check("manual")).checked);
+        assert.equal(harness.checkCount(), 0);
+        assert.equal(harness.downloadCount(), 0);
+        assert.equal(harness.quitAndInstalls(), 0);
+      }),
+    ).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("updates Linux .deb installs and leaves other non-AppImage installs off", () =>
     Effect.gen(function* () {
       const linuxState = (packageType: string | undefined) =>
