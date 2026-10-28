@@ -1,0 +1,19 @@
+{
+  "name": "@synthos/device-companion",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:g2": "node build-g2.mjs",
+    "test": "node --test *.test.mjs"
+  },
+  "dependencies": {
+    "@evenrealities/even_hub_sdk": "0.0.16",
+    "serialport": "13.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

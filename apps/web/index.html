@@ -6,9 +6,12 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#000000" />
-    <link rel="icon" href="/favicon.ico" sizes="48x48" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#0d172d" />
+    <meta
+      name="description"
+      content="SynthOS Night Riders. A human-directed coding cockpit with connected knowledge, tools, and reviewable workflows. Built on T3 Code."
+    />
+    <link rel="icon" href="/synthos/icon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <script>
       (() => {
@@ -51,6 +54,14 @@
         // Keep this small boot-time copy in sync with the built-in palettes so
         // the selected theme is visible before the app has mounted.
         const BUILT_IN_THEME_PALETTES = {
+          "midnight-protocol": {
+            dark: {
+              background: "#080e20",
+              foreground: "#e7f7f7",
+              accent: "#00ead7",
+              chrome: "#0d172d",
+            },
+          },
           "t3-chat": {
             light: {
               background: "oklch(0.982446 0.010114 325.653)",
@@ -137,6 +148,7 @@
           "ocean",
           "ember",
           "iris",
+          "midnight-protocol",
           "t3-chat-dark",
           "t3-grove",
           "t3-ocean",
@@ -213,7 +225,7 @@
         };
 
         try {
-          const storedTheme = window.localStorage.getItem("t3code:theme");
+          const storedTheme = window.localStorage.getItem("t3code:theme") ?? "midnight-protocol";
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           const LEGACY_THEME_IDS = {
             "t3-chat-dark": "t3-chat",
@@ -242,7 +254,9 @@
             themeModes !== null;
           const theme = isKnownTheme && storedTheme ? storedTheme : "system";
           const isThemed = isKnownTheme && themeModes !== null;
-          const baseAppearance = customTheme ? customTheme.appearance : "light";
+          const baseAppearance = customTheme
+            ? customTheme.appearance
+            : (builtInModes?.[0] ?? "light");
           const systemMode = prefersDark ? "dark" : "light";
           const storedAppearanceMode = window.localStorage.getItem(
             THEME_APPEARANCE_MODE_STORAGE_KEY,
@@ -387,6 +401,12 @@
       })();
     </script>
     <style>
+      @font-face {
+        font-family: SynthMontserrat;
+        src: url("/synthos/fonts/montserrat-latin-variable.woff2") format("woff2");
+        font-weight: 100 900;
+        font-display: swap;
+      }
       html,
       body,
       #root {
@@ -434,9 +454,15 @@
       }
 
       #boot-shell-logo {
-        width: 64px;
-        height: 64px;
-        object-fit: contain;
+        font:
+          900 26px/1.1 SynthMontserrat,
+          Arial,
+          sans-serif;
+        letter-spacing: -0.03em;
+        white-space: nowrap;
+      }
+      #boot-shell-logo span {
+        color: #ff4db8;
       }
 
       /* App CSS locks body and #root scrolling once main loads, so the error screen scrolls itself. */
@@ -668,13 +694,13 @@
         white-space: nowrap;
       }
     </style>
-    <title>T3 Code (Beta)</title>
+    <title>SynthOS · Night Riders</title>
   </head>
   <body>
     <div id="root">
       <div id="boot-shell">
-        <div id="boot-shell-card" aria-label="T3 Code splash screen">
-          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Code" />
+        <div id="boot-shell-card" aria-label="SynthOS splash screen">
+          <span id="boot-shell-logo">SYNTH<span>OS</span></span>
         </div>
       </div>
     </div>

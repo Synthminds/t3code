@@ -8,9 +8,22 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeOS from "node:os";
 import { assert, it, vi } from "vite-plus/test";
 
-import { fixPath, hydratePosixHome } from "./os-jank.ts";
+import { fixPath, hydratePosixHome, resolveBaseDir } from "./os-jank.ts";
 
 vi.mock("node:child_process", { spy: true });
+
+effectIt.effect("isolates default state while retaining explicit home overrides", () =>
+  Effect.gen(function* () {
+    for (const raw of [undefined, "", "   "]) {
+      assert.equal(yield* resolveBaseDir(raw), "/home/operator/.synthos");
+    }
+    assert.equal(yield* resolveBaseDir("~/custom-state"), "/home/operator/custom-state");
+    assert.equal(yield* resolveBaseDir("/explicit/state"), "/explicit/state");
+  }).pipe(
+    Effect.provideService(HostProcess.HomeDirectory, "/home/operator"),
+    Effect.provide(NodeServices.layer),
+  ),
+);
 
 it("hydrates HOME independently of a blank process HOME", () => {
   const originalHome = process.env.HOME;

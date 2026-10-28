@@ -234,6 +234,13 @@ describe("provider enabled defaults", () => {
 });
 
 describe("ServerSettings worktree defaults", () => {
+  it("requires approval by default while preserving an explicitly stored runtime mode", () => {
+    expect(decodeServerSettings({}).defaultRuntimeMode).toBe("approval-required");
+    expect(decodeServerSettings({ defaultRuntimeMode: "full-access" }).defaultRuntimeMode).toBe(
+      "full-access",
+    );
+  });
+
   it("defaults the thread env mode to inherit and keeps stored values", () => {
     expect(decodeServerSettings({}).defaultThreadEnvMode).toBeNull();
     expect(decodeServerSettings({ defaultThreadEnvMode: "worktree" }).defaultThreadEnvMode).toBe(

@@ -56,7 +56,7 @@ export async function installGnomeCaptureBundle({ bundle, dataHome }: SetupPaths
     if (installed.version > metadata.version)
       throw new Error("A newer extension is installed. Update T3 Code instead of replacing it.");
   }
-  const staged = await NodeFSP.mkdtemp(NodePath.join(parent, ".t3-capture-install-"));
+  const staged = await NodeFSP.mkdtemp(NodePath.join(parent, ".synthos-capture-install-"));
   let backup: string | undefined;
   try {
     for (const name of GNOME_CAPTURE_FILES) {
@@ -65,7 +65,7 @@ export async function installGnomeCaptureBundle({ bundle, dataHome }: SetupPaths
     }
     await NodeFSP.chmod(staged, 0o755);
     if (existing) {
-      const backupParent = NodePath.join(dataHome, "t3code", "extension-backups");
+      const backupParent = NodePath.join(dataHome, "synthos", "extension-backups");
       await NodeFSP.mkdir(backupParent, { recursive: true });
       backup = NodePath.join(
         await NodeFSP.mkdtemp(NodePath.join(backupParent, "capture-")),

@@ -215,6 +215,20 @@ describe("t3 server command safety", () => {
 });
 
 describe("t3 app", () => {
+  it.effect("refuses upstream updates before creating state or selecting a release", () =>
+    withTempDirectory("synthos-update-disabled-", (root) =>
+      Effect.gen(function* () {
+        const baseDir = NodePath.join(root, "state");
+        for (const args of [["update"], ["update", "9.9.9", "--yes", "--allow-downgrade"]]) {
+          const error = yield* runCli(args, { T3CODE_HOME: baseDir }).pipe(Effect.flip);
+          expect(error).toMatchObject({ _tag: "CliUpdateError" });
+          expect(String(error)).toContain("disabled for SynthOS");
+          expect(yield* pathExists(baseDir)).toBe(false);
+        }
+      }),
+    ),
+  );
+
   it.effect("uses T3CODE_HOME or --base-dir and sends the default or explicit path", () =>
     withTempDirectory("t3-app-command-test-", (root) =>
       Effect.gen(function* () {
@@ -239,7 +253,7 @@ describe("t3 app", () => {
   it.effect("prefers the installed desktop app when a dev desktop is also running", () =>
     withTempDirectory("t3-app-preferred-test-", (root) =>
       Effect.gen(function* () {
-        const baseDir = NodePath.join(root, ".t3");
+        const baseDir = NodePath.join(root, ".synthos");
         const desktop = yield* fakeDesktop({ baseDir });
         const development = yield* fakeDesktop({ baseDir, stateSubdirectory: "dev" });
 
@@ -254,7 +268,7 @@ describe("t3 app", () => {
   it.effect("finds the dev desktop when the default desktop socket is absent", () =>
     withTempDirectory("t3-app-dev-test-", (root) =>
       Effect.gen(function* () {
-        const baseDir = NodePath.join(root, ".t3");
+        const baseDir = NodePath.join(root, ".synthos");
         const development = yield* fakeDesktop({ baseDir, stateSubdirectory: "dev" });
 
         yield* runCli(["app"]);
@@ -269,7 +283,7 @@ describe("t3 app", () => {
   it.effect("never searches a dev state directory for an explicit T3 home", () =>
     withTempDirectory("t3-app-explicit-test-", (root) =>
       Effect.gen(function* () {
-        const baseDir = NodePath.join(root, ".t3");
+        const baseDir = NodePath.join(root, ".synthos");
         const development = yield* fakeDesktop({ baseDir, stateSubdirectory: "dev" });
 
         const flagError = yield* runCli(["app", "--base-dir", baseDir]).pipe(Effect.flip);
@@ -287,7 +301,7 @@ describe("t3 app", () => {
     (responseKind) =>
       withTempDirectory("t3-app-response-test-", (root) =>
         Effect.gen(function* () {
-          const baseDir = NodePath.join(root, ".t3");
+          const baseDir = NodePath.join(root, ".synthos");
           const desktop = yield* fakeDesktop({
             baseDir,
             reply: (request) =>

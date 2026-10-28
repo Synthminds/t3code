@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SynthOS · G2 capture</title>
+    <link rel="stylesheet" href="/capture.css" />
+    <script type="module" src="/capture.js"></script>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">SynthOS · phone companion</p>
+      <h1>Keep the thought.</h1>
+      <p>Save a thought for review in SynthOS.</p>
+      <p id="bridge-status" role="status">Glasses connection is unverified.</p>
+      <button id="connect-glasses" type="button">Connect glasses through Even Hub</button>
+      <form id="pair-form">
+        <label for="pairing-token">Companion pairing token</label>
+        <input id="pairing-token" type="password" autocomplete="off" required />
+        <button type="submit">Connect this phone</button>
+      </form>
+      <form id="capture-form" hidden>
+        <label for="title">Title</label>
+        <input id="title" maxlength="256" value="G2 thought" required />
+        <label for="content">Thought</label>
+        <textarea id="content" rows="7" maxlength="12000" required></textarea>
+        <button type="submit">Save for review</button>
+      </form>
+      <p id="status" role="status" aria-live="polite">
+        Connect through your phone's private SSH forward.
+      </p>
+      <div id="controls" hidden>
+        <button id="refresh" type="button">Refresh status</button>
+        <button id="stop" type="button">Stop forwarding</button>
+        <button id="signout" type="button">Disconnect phone</button>
+      </div>
+      <p class="note">
+        Saved thoughts stay in the local queue until you explicitly forward them from the companion
+        host. Phone dictation uses your ordinary keyboard. This page does not capture microphone
+        audio. Glasses controls refresh queue status and stop forwarding.
+      </p>
+    </main>
+  </body>
+</html>

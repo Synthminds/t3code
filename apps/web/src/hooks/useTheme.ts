@@ -196,7 +196,8 @@ export function readThemePreference(): Theme {
       cause,
     });
   }
-  if (raw !== null && isKnownThemePreference(raw)) {
+  if (raw === null) return "midnight-protocol";
+  if (isKnownThemePreference(raw)) {
     return canonicalThemePreference(raw);
   }
   return DEFAULT_THEME_SNAPSHOT.theme;
