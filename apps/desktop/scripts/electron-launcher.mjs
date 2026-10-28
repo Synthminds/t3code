@@ -13,12 +13,12 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Beta)";
+const APP_DISPLAY_NAME = isDevelopment ? "SynthOS (Dev)" : "SynthOS (Beta)";
 const APP_BUNDLE_ID = isDevelopment
-  ? `com.t3tools.t3code.dev.${devBundleIdSuffix || "local"}`
-  : "com.t3tools.t3code";
-const APP_PROTOCOL_SCHEMES = isDevelopment ? ["t3code-dev"] : ["t3code"];
-const LAUNCHER_VERSION = 20;
+  ? `com.synthminds.synthos.dev.${devBundleIdSuffix || "local"}`
+  : "com.synthminds.synthos";
+const APP_PROTOCOL_SCHEMES = isDevelopment ? ["synthos-dev"] : ["synthos"];
+const LAUNCHER_VERSION = 21;
 const developmentMacIconPngPath = NodePath.join(
   repoRoot,
   "assets",
@@ -268,8 +268,8 @@ function resolveMacBundleInfoPlistStrings(executableName) {
     CFBundleExecutable: executableName,
     CFBundleIconFile: "icon.icns",
     NSScreenCaptureUsageDescription:
-      "T3 Code captures the active window when you use the snapshot shortcut.",
-    NSDocumentsFolderUsageDescription: "T3 Code reads project files you open in the desktop app.",
+      "SynthOS captures the active window when you use the snapshot shortcut.",
+    NSDocumentsFolderUsageDescription: "SynthOS reads project files you open in the desktop app.",
   };
 }
 
