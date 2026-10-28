@@ -1,8 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Tests compare the serialized artifact against its actual digest.
 import * as NodeCrypto from "node:crypto";
-import { createGchPacket, GCH_POLICY } from "./gchPolicy.ts";
+import { SynthosPolicy } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+import { createGchPacket, GCH_POLICY, GCH_POLICY_INSPECTION } from "./gchPolicy.ts";
+import sources from "./gchPolicySources.json" with { type: "json" };
 
+const decodePolicy = Schema.decodeSync(SynthosPolicy);
 const task = {
   workflowId: "mission-1",
   role: "architect",
@@ -13,6 +17,24 @@ const task = {
 };
 
 describe("GCH frozen task packets", () => {
+  it("exposes the exact bounded policy artifact without changing existing workflow identity", () => {
+    const policy = decodePolicy(GCH_POLICY_INSPECTION);
+    const encode = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+    expect(policy.sha256).toBe(
+      NodeCrypto.createHash("sha256")
+        .update(
+          encode({ sources, enforced: GCH_POLICY.enforced, limitations: GCH_POLICY.limitations }),
+        )
+        .digest("hex"),
+    );
+    expect(NodeCrypto.createHash("sha256").update(policy.canonicalRules).digest("hex")).toBe(
+      policy.canonicalRulesSha256,
+    );
+    expect(policy.sources).toEqual(sources.sources);
+    expect(policy.sourceCommit).toBe(sources.sourceCommit);
+    expect(Buffer.byteLength(encode(policy), "utf8")).toBeLessThan(96 * 1024);
+  });
+
   it("keeps imported source inert and binds criteria and candidate to the packet identity", () => {
     const packet = createGchPacket(task);
     expect(packet.html).not.toContain("<script>");

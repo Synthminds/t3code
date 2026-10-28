@@ -70,6 +70,7 @@ export class SynthosCliError extends Schema.TaggedError<SynthosCliError>()("Synt
 }
 
 export type SynthosCliRequest =
+  | { readonly type: "policy" }
   | { readonly type: "list" }
   | { readonly type: "get"; readonly workflowId: string }
   | { readonly type: "create"; readonly input: SynthosCreateInput }
@@ -145,6 +146,8 @@ export const requestSynthos = Effect.fn("cli.synthos.request")(
     const send = Effect.fn("cli.synthos.send")(function* (token: string) {
       const headers = { authorization: `Bearer ${token}` };
       switch (request.type) {
+        case "policy":
+          return yield* client.synthos.getPolicy({ headers });
         case "list":
           return yield* client.synthos.listWorkflows({ headers });
         case "get":
@@ -179,7 +182,7 @@ export const requestSynthos = Effect.fn("cli.synthos.request")(
         ? [synthosKnowledgeRequiredScope(request.input)]
         : request.type === "connection"
           ? [synthosConnectionRequiredScope(request.input)]
-          : request.type === "list" || request.type === "get"
+          : request.type === "list" || request.type === "get" || request.type === "policy"
             ? [AuthOrchestrationReadScope]
             : request.type === "command" && request.input.action === "approve"
               ? [AuthOrchestrationOperateScope, AuthSourceControlWriteScope]
@@ -243,6 +246,10 @@ export const synthosCommand = Command.make("synthos").pipe(
     "Control saved SynthOS workflows on the running server. Prints JSON. GCH_AUTH_TOKEN reuses an existing session for idempotent retries.",
   ),
   Command.withSubcommands([
+    Command.make("policy", { ...projectLocationFlags }).pipe(
+      Command.withDescription("Inspect the current host's GCH policy, source lineage, and limits."),
+      Command.withHandler((flags) => runOnServer(flags, { type: "policy" }).pipe(reportErrors)),
+    ),
     Command.make("list", { ...projectLocationFlags }).pipe(
       Command.withDescription("List saved workflows without starting work."),
       Command.withHandler((flags) => runOnServer(flags, { type: "list" }).pipe(reportErrors)),

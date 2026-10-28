@@ -1708,6 +1708,202 @@
   font-size: 8px;
   line-height: 1.7;
 }
+.sx-policy-inspector {
+  margin-bottom: 24px;
+  border-left: 3px solid var(--sx-cyan);
+}
+.sx-policy-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 64px;
+  padding: 12px 16px;
+  cursor: pointer;
+  list-style: none;
+  background: linear-gradient(110deg, #203454, #15253e);
+}
+.sx-policy-summary::-webkit-details-marker {
+  display: none;
+}
+.sx-policy-summary > svg {
+  flex-shrink: 0;
+  color: var(--sx-cyan);
+}
+.sx-policy-summary > span:first-of-type {
+  flex: 1;
+  min-width: 0;
+}
+.sx-policy-summary strong {
+  display: block;
+  font:
+    600 12px/1.6 SynthOrbitron,
+    sans-serif;
+}
+.sx-policy-summary small {
+  display: block;
+  color: var(--sx-muted);
+  font-size: 11px;
+}
+.sx-policy-version {
+  color: var(--sx-cyan);
+  font:
+    11px/1.6 ui-monospace,
+    monospace;
+  text-align: right;
+}
+.sx-policy-version[data-mismatch="true"] {
+  color: var(--sx-warning);
+}
+.sx-policy-inspector[open] > .sx-policy-summary .sx-policy-chevron {
+  transform: rotate(90deg);
+}
+.sx-policy-body {
+  padding: 18px;
+  border-top: 1px solid var(--sx-line);
+}
+.sx-policy-body > p {
+  margin: 0 0 16px;
+  max-width: 95ch;
+}
+.sx-policy-binding {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1px solid #376077;
+  background: #0b1e32;
+}
+.sx-policy-binding[data-mismatch="true"] {
+  border-color: var(--sx-warning);
+}
+.sx-policy-binding strong {
+  color: var(--sx-cyan);
+}
+.sx-policy-binding[data-mismatch="true"] strong {
+  color: var(--sx-warning);
+}
+.sx-policy-binding p {
+  margin: 8px 0 0;
+}
+.sx-policy-binding code,
+.sx-policy-metadata code {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.sx-policy-binding code {
+  display: block;
+  color: var(--sx-muted);
+}
+.sx-policy-metadata {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+}
+.sx-policy-metadata > div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 10px;
+}
+.sx-policy-metadata dt {
+  color: var(--sx-muted);
+}
+.sx-policy-metadata dd {
+  margin: 0;
+}
+.sx-policy-metadata a,
+.sx-policy-sources a {
+  color: var(--sx-cyan);
+  overflow-wrap: anywhere;
+}
+.sx-policy-metadata a > svg,
+.sx-policy-sources a > svg {
+  display: inline;
+  margin-left: 6px;
+}
+.sx-policy-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+  margin-bottom: 18px;
+}
+.sx-policy-controls h3 {
+  margin: 0 0 8px;
+  color: var(--sx-chrome);
+  font:
+    600 12px/1.6 SynthOrbitron,
+    sans-serif;
+}
+.sx-policy-controls ul {
+  margin: 0;
+  padding-left: 18px;
+  list-style: disc;
+}
+.sx-policy-controls li + li {
+  margin-top: 8px;
+}
+.sx-policy-document {
+  border-top: 1px solid var(--sx-line);
+}
+.sx-policy-document > summary {
+  min-height: 44px;
+  padding: 12px 0;
+  cursor: pointer;
+  color: var(--sx-chrome);
+}
+.sx-policy-document > pre,
+.sx-policy-sources {
+  max-height: 340px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin: 0 0 16px;
+  padding: 14px;
+  background: var(--sx-well);
+  border: 1px solid var(--sx-line);
+  font:
+    11px/1.8 ui-monospace,
+    monospace;
+  overflow-wrap: anywhere;
+}
+.sx-policy-document > pre {
+  white-space: pre-wrap;
+}
+.sx-policy-sources {
+  list-style: none;
+}
+.sx-policy-sources li + li {
+  margin-top: 16px;
+}
+.sx-policy-sources code {
+  display: block;
+  color: var(--sx-muted);
+}
+.sx-policy-body > .sx-button {
+  margin-top: 14px;
+  min-height: 44px;
+}
+@media (max-width: 620px) {
+  .sx-policy-summary {
+    gap: 9px;
+    padding: 12px;
+    flex-wrap: wrap;
+  }
+  .sx-policy-summary > span:first-of-type {
+    flex-basis: calc(100% - 60px);
+  }
+  .sx-policy-version {
+    order: 1;
+    text-align: left;
+    padding-left: 27px;
+  }
+  .sx-policy-body {
+    padding: 14px;
+  }
+  .sx-policy-metadata > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .sx-policy-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .sx-tools-stack {
   display: grid;
   gap: 22px;

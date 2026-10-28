@@ -36,6 +36,14 @@ export const layer = HttpApiBuilder.group(
     const startup = yield* ServerRuntimeStartup.ServerRuntimeStartup;
     return handlers
       .handle(
+        "getPolicy",
+        Effect.fn("environment.synthos.getPolicy")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          return yield* workflows.policy;
+        }),
+      )
+      .handle(
         "listWorkflows",
         Effect.fn("environment.synthos.listWorkflows")(function* (args) {
           yield* annotateEnvironmentRequest(args.endpoint.name);

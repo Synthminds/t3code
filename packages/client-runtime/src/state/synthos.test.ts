@@ -14,6 +14,19 @@ import { createSynthosRequestCommand, type SynthosRequest } from "./synthos.ts";
 
 const REMOTE_ID = EnvironmentId.make("remote-environment");
 const COOKIE_ID = EnvironmentId.make("cookie-environment");
+const policy = {
+  version: "test-policy",
+  sha256: "a".repeat(64),
+  applicationScope: "synthos_workflows",
+  sourceRepository: "https://github.com/example/policy",
+  sourceCommit: "b".repeat(40),
+  capturedAt: "2026-10-28",
+  canonicalRulesSha256: "c".repeat(64),
+  canonicalRules: "Fixture rules",
+  sources: [],
+  enforced: [],
+  limitations: [],
+};
 
 const makeHarness = Effect.fn("TestSynthosRequest.makeHarness")(function* () {
   const calls: Array<{ url: string; init: RequestInit }> = [];
@@ -57,7 +70,13 @@ const makeHarness = Effect.fn("TestSynthosRequest.makeHarness")(function* () {
   const fetcher: typeof globalThis.fetch = async (request, init) => {
     const url = String(request);
     calls.push({ url, init: init ?? {} });
-    return Response.json(url.endsWith("/connections") ? { connections: [] } : { workflows: [] });
+    return Response.json(
+      url.endsWith("/policy")
+        ? policy
+        : url.endsWith("/connections")
+          ? { connections: [] }
+          : { workflows: [] },
+    );
   };
   const runtime = Atom.runtime(
     Layer.merge(
@@ -90,10 +109,17 @@ describe("SynthOS environment requests", () => {
       });
       expect(cookie._tag).toBe("Success");
       if (cookie._tag === "Success") expect(cookie.value).toEqual({ connections: [] });
-      expect(harness.selected).toEqual([REMOTE_ID, COOKIE_ID]);
+      const inspection = yield* harness.run(REMOTE_ID, {
+        path: "/api/synthos/policy",
+        method: "GET",
+      });
+      expect(inspection._tag).toBe("Success");
+      if (inspection._tag === "Success") expect(inspection.value).toEqual(policy);
+      expect(harness.selected).toEqual([REMOTE_ID, COOKIE_ID, REMOTE_ID]);
       expect(harness.calls.map((call) => call.url)).toEqual([
         "https://selected.example.test/api/synthos/workflows",
         "https://cookie.example.test/api/synthos/connections",
+        "https://selected.example.test/api/synthos/policy",
       ]);
       expect(new Headers(harness.calls[0]?.init.headers).get("authorization")).toBe(
         "Bearer selected-token",
@@ -101,6 +127,9 @@ describe("SynthOS environment requests", () => {
       expect(new Headers(harness.calls[1]?.init.headers).has("authorization")).toBe(false);
       expect(harness.calls[1]?.init.credentials).toBe("include");
       expect(harness.calls[1]?.init.method).toBe("POST");
+      expect(new Headers(harness.calls[2]?.init.headers).get("authorization")).toBe(
+        "Bearer selected-token",
+      );
     }).pipe(Effect.scoped),
   );
 
@@ -113,6 +142,7 @@ describe("SynthOS environment requests", () => {
           { path: "https://outside.example.test/api/synthos/workflows", method: "GET" },
           { path: "/api/filesystem/read", method: "POST", body: { path: "/secret" } },
           { path: "/api/synthos/connections", method: "GET" },
+          { path: "/api/synthos/policy", method: "POST", body: {} },
           { path: "/api/synthos/workflows/..", method: "GET" },
           { path: "/api/synthos/workflows/%2e%2e", method: "GET" },
           {

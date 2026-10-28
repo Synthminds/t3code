@@ -45,6 +45,7 @@ import { synthosRequest } from "./synthosRequest";
 import { SynthosKnowledge } from "./SynthosKnowledge";
 import { SynthosTools } from "./SynthosTools";
 import { SynthosDevices } from "./SynthosDevices";
+import { SynthosPolicyInspector } from "./SynthosPolicyInspector";
 import "./synthos.css";
 
 const panels = [
@@ -412,6 +413,12 @@ function CockpitEnvironment({
             {actionError}
           </div>
         )}
+        <SynthosPolicyInspector
+          key={`${environmentId}:${connected}`}
+          environmentId={environmentId}
+          connected={connected}
+          workflow={selected}
+        />
         {(panel === "cockpit" || panel === "graph" || panel === "decisions") && (
           <div className="sx-section-heading">
             <div>

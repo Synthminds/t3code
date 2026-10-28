@@ -1,6 +1,8 @@
 # SynthOS Night Riders
 
-SynthOS is the Night Riders control room inside this T3 Code fork. It shares T3 projects, threads, provider connections, authentication, editor, and terminal. It does not run the previous GCH daemon.
+SynthOS brings GCH's mission workflow into the Night Riders control room. **GCH** supplies the operating rules, model roles, budgets, verification requirements, and human decision gates. **T3 Code** supplies the projects, provider connections, threads, authentication, editor, and terminal. **SynthOS** brings those together with knowledge, mail, tools, and device intake.
+
+GCH missions run inside this application, so you do not need to start the old GCH daemon separately. Use **Create mission** in SynthOS or the `gch synthos` commands below to enter that workflow. Ordinary T3 threads and commands entered directly in its terminal do not automatically enter the GCH mission controller.
 
 ## Start this checkout
 
@@ -41,6 +43,16 @@ The lead car and three motorcycles represent persistent roles. An assigned role 
 
 Approval creates a publication package bound to its evidence and candidate checkpoint. It does not itself establish a live publisher or claim that a remote branch, pull request, or deployment was published. Token usage that cannot be accounted for blocks progression rather than being treated as zero.
 
+## Inspect GCH integration
+
+Open the cockpit's **GCH** inspector or run `gch synthos policy` to inspect the server's policy source and integration limits. The read-only API is `GET /api/synthos/policy`, using an authenticated session with `orchestration:read`.
+
+The pinned policy is **GCH 3.0 / rules 1.9**: every managed mission turn receives the complete **GCH 2.0.0 / rules 1.9** operating rules and a frozen role task packet. The 3.0 factory documents and earlier editions preserve the source lineage; conflicting historical rules are not loaded together. This build uses the **2026-10-13** source capture at GCH commit [`a11ebfb`](https://github.com/Synthminds/GCH/tree/a11ebfb89bbc7fcf9cb47df54454b66412ddeedc), not a live Google Drive sync. A mission retains its policy fingerprint; a changed policy blocks further dispatch on that mission.
+
+The controller enforces persisted attempt and token reservations, bounded retries, immutable task packets, observed command results, candidate checks, and a separate human approval step. Missing token usage or failed verification blocks progression. Provider reservations limit admission of further work; they are not guaranteed hard spending caps inside a running provider.
+
+Some GCH requirements still need enforcement beyond instructions: qualified worker guards and read-only boundaries, freezing test files before construction, construction proposals applied only by the lead, and live Jev/TypeSafe routing. T3's approval-required mode does not establish those guarantees. The current crew can edit its worktree directly. Autonomous publication and merging remain disabled; use the existing workspace controls to review and publish approved work.
+
 ## Connect knowledge and mail
 
 Set configuration on the host running the server, through its process environment or the development checkout's gitignored `.env.local`, then restart the server. Never put credentials in the browser bundle.
@@ -70,6 +82,7 @@ The responsive cockpit is implemented for the web and the desktop's shared web s
 Use the `gch` binary from this fork with a running SynthOS server. These commands use the same authenticated API and saved workflows as the cockpit; they do not start another workflow runtime. Each prints JSON. Add `--base-dir <directory>` when the server uses an explicit data directory.
 
 ```sh
+gch synthos policy
 gch synthos list
 gch synthos get mission-1
 gch synthos create mission.json
@@ -155,6 +168,6 @@ To restore a deleted graph record after leaving the view, use `gch synthos knowl
 
 ## Source and policy provenance
 
-The Night Riders scene, vehicle geometry, and brand direction originate from the sibling GCH project: [PRODUCT.md](https://github.com/Synthminds/GCH/blob/a11ebfb89bbc7fcf9cb47df54454b66412ddeedc/PRODUCT.md), [DESIGN.md](https://github.com/Synthminds/GCH/blob/a11ebfb89bbc7fcf9cb47df54454b66412ddeedc/DESIGN.md), and [vehicle provenance](../../apps/web/public/synthos/vehicles/asset-provenance.json). The source [principles](https://github.com/Synthminds/GCH/blob/a11ebfb89bbc7fcf9cb47df54454b66412ddeedc/docs/PRINCIPLES.md) document the original control rules. The cockpit displays the workflow's policy version and content fingerprint in its operating limits. This fork preserves T3 Code's upstream license and attribution.
+The Night Riders scene, vehicle geometry, and brand direction originate from the sibling GCH project: [PRODUCT.md](https://github.com/Synthminds/GCH/blob/a11ebfb89bbc7fcf9cb47df54454b66412ddeedc/PRODUCT.md), [DESIGN.md](https://github.com/Synthminds/GCH/blob/a11ebfb89bbc7fcf9cb47df54454b66412ddeedc/DESIGN.md), and [vehicle provenance](../../apps/web/public/synthos/vehicles/asset-provenance.json). The source [principles](https://github.com/Synthminds/GCH/blob/a11ebfb89bbc7fcf9cb47df54454b66412ddeedc/docs/PRINCIPLES.md) document the inherited control rules and gaps in historical source material. This fork preserves T3 Code's upstream license and attribution.
 
 Verification requires numeric exit receipts for the configured commands. Providers that do not expose those receipts, including the current Claude command adapter, remain unqualified for the lead verification role; the workflow holds at that evidence gate.
