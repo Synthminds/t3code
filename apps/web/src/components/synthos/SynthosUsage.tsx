@@ -12,7 +12,7 @@ import { Gauge, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { useEnvironmentThread } from "../../state/threads";
-import { reconcileSynthosAttempt, synthosUsageLedger } from "./synthosUsage";
+import { reconcileSynthosAttempt, synthosUsageLedger } from "./synthosUsageLedger";
 
 type UsageProps = {
   environmentId: EnvironmentId | null;
