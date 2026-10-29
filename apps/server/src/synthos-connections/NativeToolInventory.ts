@@ -164,15 +164,17 @@ const make = Effect.gen(function* () {
                   : null,
               reason: !supported
                 ? "This host platform or architecture is unsupported."
-                : tool.commandName === null
-                  ? "External application or service; no verified native CLI is tracked."
-                  : !installed
-                    ? "Executable was not found on this host's bounded PATH search."
-                    : configured
-                      ? "Credential configuration is present; authentication has not been checked."
-                      : activeTerminals > 0
-                        ? "A matching child process was observed in a T3 terminal."
-                        : "Executable found. Setup and external terminal activity have not been verified.",
+                : tool.interface === "mcp"
+                  ? "Remote MCP connection managed by your provider. Configuration, authentication, and tool activity are not inspected by this executable inventory."
+                  : tool.commandName === null
+                    ? "External application or service; no verified native CLI is tracked."
+                    : !installed
+                      ? "Executable was not found on this host's bounded PATH search."
+                      : configured
+                        ? "Credential configuration is present; authentication has not been checked."
+                        : activeTerminals > 0
+                          ? "A matching child process was observed in a T3 terminal."
+                          : "Executable found. Setup and external terminal activity have not been verified.",
             };
           },
         ),

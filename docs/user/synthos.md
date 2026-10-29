@@ -95,6 +95,19 @@ To preserve a mission decision or lesson, open **Decisions → Memory cassette**
 
 In **Tools + mail**, the original 41-entry CLI supply catalog is searchable by capability and category. Its host inventory checks whether executables can be found, without running a probe or authenticating services. Open a cartridge to inspect its interface and availability. Copy its terminal handoff into the existing T3 workspace terminal; this handoff is untracked by the workflow and its Stop control. Installation does not light an activity indicator. A tool lights only when the host identifies its running child process in a T3 terminal; the deck refreshes while visible and clears activity on disconnect. Other terminal sessions remain untracked. The separate provider inventory reports provider installation, sign-in, and model availability. For AgentMail, enter the sender inbox ID, recipients, subject, and body, then select **Prepare exact preview**. Inspect the complete envelope before **Send approved message**. Delivery receipts distinguish prepared, pending, sent, and unknown outcomes. An unknown outcome must be reconciled before preparing a replacement; it is not proof of failure.
 
+## Connect 21st.dev design tools
+
+On the host where Codex runs, provide `API_KEY_21ST` through your private process environment, then register the remote MCP server:
+
+```sh
+codex mcp add 21st --url https://21st.dev/api/mcp --bearer-token-env-var API_KEY_21ST
+codex mcp get 21st
+```
+
+Start a new Codex session with that environment available. If Codex is launched by SynthOS, restart the host process with the variable set so its provider sessions inherit it. Registration applies to the selected Codex home; repeat it on a separate remote host when needed. Keep the key out of project files and browser configuration.
+
+The supply deck identifies 21st as remote MCP. Its presence does not prove authentication or activity. Verify the connection from the provider session with a catalog search. Catalog search is free; component-code retrieval and generation can consume the account's quota or credits.
+
 ## Device review inbox
 
 **Devices** accepts manual Harness, Fieldy, and Even Realities G2 captures with a source reference, title, and content. Captures are stored as untrusted proposals with execution disabled. These controls do not claim that a live USB bridge, Fieldy polling account, or G2 phone companion is connected. Those hardware and companion transports require separate qualification. The original T3 [device guide](./devices.md) covers its separate iOS Simulator and Android Emulator workspace panel.

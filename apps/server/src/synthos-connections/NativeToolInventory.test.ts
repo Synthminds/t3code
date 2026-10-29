@@ -17,7 +17,16 @@ it.effect(
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "synthos-tools-" });
-      for (const command of ["gh", "rg", "Raijin", "gloomberb", "gch-librechat", "macmon"]) {
+      for (const command of [
+        "gh",
+        "rg",
+        "Raijin",
+        "gloomberb",
+        "gch-librechat",
+        "macmon",
+        "21st",
+        "codex",
+      ]) {
         const executable = path.join(root, command);
         yield* fileSystem.writeFileString(executable, "#!/bin/sh\nexit 99\n");
         yield* fileSystem.chmod(executable, 0o700);
@@ -61,6 +70,15 @@ it.effect(
           commandName: null,
           handoff: null,
         });
+        expect(snapshot.tools.find((tool) => tool.id === "21st")).toMatchObject({
+          interface: "mcp",
+          availability: "external",
+          installed: false,
+          commandName: null,
+          configuration: "unknown",
+          authentication: "not_checked",
+          handoff: null,
+        });
         expect(snapshot.activityObservedAt).toBeNull();
         expect(JSON.stringify(snapshot)).not.toContain("private-token");
         expect(JSON.stringify(snapshot)).not.toContain(root);
@@ -69,6 +87,7 @@ it.effect(
         Effect.provideService(HostProcess.Environment, {
           PATH: `${root}:relative-path`,
           GH_TOKEN: "private-token",
+          API_KEY_21ST: "private-token",
         }),
         Effect.provideService(HostProcess.Platform, "linux"),
         Effect.provideService(HostProcess.Architecture, "x64"),
@@ -107,6 +126,18 @@ it.effect(
         status: "exited",
         hasRunningSubprocess: false,
       }),
+      terminal({
+        terminalId: "term-4",
+        label: "21st",
+        status: "running",
+        hasRunningSubprocess: true,
+      }),
+      terminal({
+        terminalId: "term-5",
+        label: "codex",
+        status: "running",
+        hasRunningSubprocess: true,
+      }),
     ];
     const manager = Layer.succeed(TerminalManager.TerminalManager, {
       subscribeMetadata: (listener) =>
@@ -133,6 +164,10 @@ it.effect(
         activeTerminals: 0,
       });
       expect(snapshot.tools.find((tool) => tool.id === "ffmpeg")).toMatchObject({
+        activity: "untracked",
+        activeTerminals: 0,
+      });
+      expect(snapshot.tools.find((tool) => tool.id === "21st")).toMatchObject({
         activity: "untracked",
         activeTerminals: 0,
       });

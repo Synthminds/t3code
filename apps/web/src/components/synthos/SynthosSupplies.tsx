@@ -195,8 +195,12 @@ export function SynthosSupplies({ environmentId }: { environmentId: EnvironmentI
           <div className="sx-supply-readiness">
             <dl>
               <div>
-                <dt>Executable</dt>
-                <dd>{selected.commandName ?? "Desktop application"}</dd>
+                <dt>{selected.interface === "mcp" ? "Connection" : "Executable"}</dt>
+                <dd>
+                  {selected.interface === "mcp"
+                    ? "Remote MCP · provider managed"
+                    : (selected.commandName ?? "Desktop application")}
+                </dd>
               </div>
               <div>
                 <dt>Configuration</dt>
