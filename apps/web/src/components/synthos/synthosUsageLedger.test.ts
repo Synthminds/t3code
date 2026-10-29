@@ -2,7 +2,7 @@ import { CommandId, ProviderDriverKind, ThreadId, type SynthosAttempt } from "@t
 import { parseTokenMonitorExport } from "@t3tools/shared/tokenMonitorExport";
 import { describe, expect, it } from "vite-plus/test";
 
-import { reconcileSynthosAttempt, synthosUsageLedger } from "./synthosUsage";
+import { reconcileSynthosAttempt, synthosUsageLedger } from "./synthosUsageLedger";
 
 const attempt: SynthosAttempt = {
   id: "attempt-1",
