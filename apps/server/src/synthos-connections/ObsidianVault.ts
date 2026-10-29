@@ -187,11 +187,22 @@ async function rootDirectory(vaultRoot: string | undefined): Promise<string> {
   return root;
 }
 
-async function resolveTarget(root: string, segments: string[]): Promise<string> {
+async function resolveTarget(
+  root: string,
+  segments: string[],
+  createParents = false,
+): Promise<string> {
   let parent = root;
   await verifyDirectory(root);
   for (const segment of segments.slice(0, -1)) {
     parent = NodePath.join(parent, segment);
+    if (createParents) {
+      // Create one level at a time so every parent is checked before descending.
+      // A pre-existing symlink must not be followed by a recursive mkdir.
+      await NodeFSP.mkdir(parent, { mode: 0o700 }).catch((cause: NodeJS.ErrnoException) => {
+        if (cause.code !== "EEXIST") throw cause;
+      });
+    }
     await verifyDirectory(parent);
   }
   if ((await NodeFSP.realpath(parent)) !== parent)
@@ -269,7 +280,7 @@ const make = Effect.fn("ObsidianVault.make")(function* (config: { readonly vault
             throw new ObsidianVaultValidationError({ reason: "invalid-version" });
           }
           const root = await rootDirectory(config.vaultRoot);
-          const target = await resolveTarget(root, segments);
+          const target = await resolveTarget(root, segments, input.expectedVersion === null);
           const flags =
             NodeFS.constants.O_RDWR |
             NodeFS.constants.O_NOFOLLOW |

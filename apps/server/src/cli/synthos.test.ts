@@ -7,11 +7,13 @@ import {
   AuthSourceControlWriteScope,
   CommandId,
   ProjectId,
+  ProviderInstanceId,
   SYNTHOS_DEFAULT_BUDGET,
   SynthosCommandInput,
   SynthosConnectionCommand,
   SynthosCreateInput,
   type SynthosKnowledgeCommand,
+  type SynthosProfileCommand,
   type AuthEnvironmentScope,
   type SynthosWorkflow,
 } from "@t3tools/contracts";
@@ -104,6 +106,69 @@ const authFixture = () => {
 };
 
 describe("SynthOS CLI authenticated transport", () => {
+  it.effect("reads and saves crew profiles with exact scopes and version preconditions", () =>
+    Effect.gen(function* () {
+      const auth = authFixture();
+      const calls: unknown[] = [];
+      const profile = {
+        id: "crew:fixture",
+        name: "Fixture crew",
+        description: "A saved role roster",
+        bindings: (["architect", "crew", "lead", "reviewer"] as const).map((role) => ({
+          role,
+          modelSelection: { instanceId: ProviderInstanceId.make("fixture"), model: "fixture" },
+          inputTokenLimit: 1000,
+          outputTokenLimit: 1000,
+        })),
+        budget: SYNTHOS_DEFAULT_BUDGET,
+        checkCommands: ["vp test run scoped.test.ts"],
+      };
+      const client = HttpClient.make((request) => {
+        assert.equal(new URL(request.url).pathname, "/api/synthos/profiles");
+        assert.equal(request.method, "POST");
+        assert.equal(request.headers.authorization, "Bearer temporary-fixture-token");
+        if (request.body._tag !== "Uint8Array") return Effect.die("Expected JSON request");
+        calls.push(decodeJson(new TextDecoder().decode(request.body.body)));
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            Response.json(
+              calls.length === 1
+                ? { type: "list", profiles: [], truncated: false }
+                : {
+                    type: "profile",
+                    profile: {
+                      ...profile,
+                      version: 2,
+                      deleted: false,
+                      createdAt: "2026-10-28T00:00:00Z",
+                      updatedAt: "2026-10-28T00:01:00Z",
+                      createdBy: "initial-user",
+                      updatedBy: sessionId,
+                    },
+                  },
+            ),
+          ),
+        );
+      });
+      const commands: ReadonlyArray<SynthosProfileCommand> = [
+        { type: "list", includeDeleted: true },
+        { type: "upsert", profile, expectedVersion: 1 },
+      ];
+      for (const input of commands)
+        yield* requestSynthos(origin, { type: "profile", input }).pipe(
+          Effect.provide(auth.layer),
+          Effect.provideService(HttpClient.HttpClient, client),
+        );
+      assert.deepEqual(calls, [...commands]);
+      assert.deepEqual(auth.issuedScopes, [
+        [AuthOrchestrationReadScope],
+        [AuthOrchestrationOperateScope],
+      ]);
+      assert.deepEqual(auth.revoked, [sessionId, sessionId]);
+    }),
+  );
+
   it.effect(
     "reads and updates the shared knowledge graph with exact scopes and version preconditions",
     () =>

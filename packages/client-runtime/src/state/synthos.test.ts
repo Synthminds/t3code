@@ -73,9 +73,11 @@ const makeHarness = Effect.fn("TestSynthosRequest.makeHarness")(function* () {
     return Response.json(
       url.endsWith("/policy")
         ? policy
-        : url.endsWith("/connections")
-          ? { connections: [] }
-          : { workflows: [] },
+        : url.endsWith("/profiles")
+          ? { type: "list", profiles: [], truncated: false }
+          : url.endsWith("/connections")
+            ? { connections: [] }
+            : { workflows: [] },
     );
   };
   const runtime = Atom.runtime(
@@ -115,11 +117,20 @@ describe("SynthOS environment requests", () => {
       });
       expect(inspection._tag).toBe("Success");
       if (inspection._tag === "Success") expect(inspection.value).toEqual(policy);
-      expect(harness.selected).toEqual([REMOTE_ID, COOKIE_ID, REMOTE_ID]);
+      const profiles = yield* harness.run(COOKIE_ID, {
+        path: "/api/synthos/profiles",
+        method: "POST",
+        body: { type: "list" },
+      });
+      expect(profiles._tag).toBe("Success");
+      if (profiles._tag === "Success")
+        expect(profiles.value).toEqual({ type: "list", profiles: [], truncated: false });
+      expect(harness.selected).toEqual([REMOTE_ID, COOKIE_ID, REMOTE_ID, COOKIE_ID]);
       expect(harness.calls.map((call) => call.url)).toEqual([
         "https://selected.example.test/api/synthos/workflows",
         "https://cookie.example.test/api/synthos/connections",
         "https://selected.example.test/api/synthos/policy",
+        "https://cookie.example.test/api/synthos/profiles",
       ]);
       expect(new Headers(harness.calls[0]?.init.headers).get("authorization")).toBe(
         "Bearer selected-token",
@@ -143,6 +154,8 @@ describe("SynthOS environment requests", () => {
           { path: "/api/filesystem/read", method: "POST", body: { path: "/secret" } },
           { path: "/api/synthos/connections", method: "GET" },
           { path: "/api/synthos/policy", method: "POST", body: {} },
+          { path: "/api/synthos/profiles", method: "GET" },
+          { path: "/api/synthos/profiles", method: "POST", body: { type: "upsert" } },
           { path: "/api/synthos/workflows/..", method: "GET" },
           { path: "/api/synthos/workflows/%2e%2e", method: "GET" },
           {

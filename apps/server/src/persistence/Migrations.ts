@@ -79,6 +79,7 @@ import Migration0073 from "./Migrations/073_SynthosWorkflows.ts";
 import Migration0074 from "./Migrations/074_SynthosConnections.ts";
 import Migration0075 from "./Migrations/075_SynthosPolicySnapshots.ts";
 import Migration0076 from "./Migrations/076_SynthosKnowledge.ts";
+import Migration0077 from "./Migrations/077_SynthosProfiles.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -158,6 +159,7 @@ const migrationEntries = [
   [74, "SynthosConnections", Migration0074],
   [75, "SynthosPolicySnapshots", Migration0075],
   [76, "SynthosKnowledge", Migration0076],
+  [77, "SynthosProfiles", Migration0077],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

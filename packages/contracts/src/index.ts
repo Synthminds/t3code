@@ -71,3 +71,4 @@ export * from "./clientRpcPermissions.ts";
 export * from "./synthos.ts";
 export * from "./synthosConnections.ts";
 export * from "./synthosKnowledge.ts";
+export * from "./synthosProfiles.ts";
