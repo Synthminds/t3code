@@ -1,3 +1,4 @@
+import * as NativeToolProbes from "./NativeToolProbes.ts";
 import {
   SynthosConnectionCommand,
   SynthosConnectionError,
@@ -98,6 +99,7 @@ const make = Effect.gen(function* () {
   const remote = yield* RemoteConnections.RemoteConnections;
   const vault = yield* ObsidianVault.ObsidianVault;
   const inventory = yield* NativeToolInventory.NativeToolInventory;
+  const probes = yield* NativeToolProbes.NativeToolProbes;
 
   const readDraft = Effect.fn("SynthosConnections.readDraft")(function* (row: OutboxRow) {
     const envelope = yield* decodeEnvelope(row.envelope_json).pipe(
@@ -367,6 +369,8 @@ const make = Effect.gen(function* () {
       switch (command.type) {
         case "status":
           return { connections: status() };
+        case "tools.probe":
+          return { probe: yield* probes.probe(command.toolId) };
         case "tools.inventory":
           return yield* inventory.list({ includeActivity: actor.scopes.includes("terminal:read") });
         case "mail.list":
@@ -441,6 +445,7 @@ export const layerLive = Layer.unwrap(
     const config = yield* ConnectionsConfig.ConnectionsConfig;
     return layer.pipe(
       Layer.provide(NativeToolInventory.layer),
+      Layer.provide(NativeToolProbes.layer.pipe(Layer.provide(NativeToolProbes.layerRunner()))),
       Layer.provide(
         RemoteConnections.layer.pipe(
           Layer.provide(ConnectionHttp.layer.pipe(Layer.provide(ConnectionHttp.layerFetch))),

@@ -15,6 +15,8 @@ export function SynthosSupplies({ environmentId }: { environmentId: EnvironmentI
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [probingId, setProbingId] = useState<string | null>(null);
+  const [probeNotice, setProbeNotice] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [copied, setCopied] = useState(false);
   const environment = useEnvironment(environmentId);
@@ -70,6 +72,32 @@ export function SynthosSupplies({ environmentId }: { environmentId: EnvironmentI
     };
   }, [environmentId, refresh]);
 
+  async function probe(toolId: string) {
+    if (!environmentId || probingId) return;
+    setProbingId(toolId);
+    setProbeNotice(null);
+    setError(null);
+    try {
+      await synthosRequest(environmentId, "/api/synthos/connections", {
+        method: "POST",
+        body: { type: "tools.probe", toolId },
+      });
+      const next = await synthosRequest<SynthosNativeToolInventory>(
+        environmentId,
+        "/api/synthos/connections",
+        { method: "POST", body: { type: "tools.inventory" } },
+      );
+      setInventory(next);
+      setProbeNotice(
+        "Version check recorded on this host. Authentication and service health remain separate.",
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The host could not complete this probe.");
+    } finally {
+      setProbingId(null);
+    }
+  }
+
   return (
     <section className="sx-panel sx-supplies" aria-label="CLI supply deck">
       <header className="sx-panel-title">
@@ -122,6 +150,11 @@ export function SynthosSupplies({ environmentId }: { environmentId: EnvironmentI
           {error}
         </p>
       )}
+      {probeNotice && (
+        <p className="sx-muted" role="status">
+          {probeNotice}
+        </p>
+      )}
       {inventory ? (
         <>
           <div className="sx-supply-grid">
@@ -131,6 +164,8 @@ export function SynthosSupplies({ environmentId }: { environmentId: EnvironmentI
                 type="button"
                 className="sx-cartridge"
                 data-running={activityCurrent && tool.activity === "running"}
+                data-probing={probingId === tool.id}
+                aria-busy={probingId === tool.id}
                 aria-pressed={selected?.id === tool.id}
                 onClick={() => {
                   setSelectedId(tool.id);
@@ -148,6 +183,11 @@ export function SynthosSupplies({ environmentId }: { environmentId: EnvironmentI
                   {activityCurrent && tool.activity === "running"
                     ? "Running · observed"
                     : tool.availability}
+                </span>
+                <span className="sx-tool-probe-state">
+                  {probingId === tool.id
+                    ? "PROBING…"
+                    : `Probe · ${tool.probe?.state ?? "unmeasured"}`}
                 </span>
               </button>
             ))}
@@ -219,6 +259,36 @@ export function SynthosSupplies({ environmentId }: { environmentId: EnvironmentI
                 </dd>
               </div>
             </dl>
+            <div className="sx-probe-inspector">
+              <strong>Version probe · {selected.probe?.state ?? "unmeasured"}</strong>
+              {selected.probe?.observation && (
+                <p className="sx-muted">
+                  Checked {selected.probe.observation.checkedAt} ·{" "}
+                  {selected.probe.observation.reason.replaceAll("_", " ")}
+                  {selected.probe.observation.exitCode !== null
+                    ? ` · exit ${selected.probe.observation.exitCode}`
+                    : ""}
+                </p>
+              )}
+              {selected.probe?.state === "stale" && (
+                <p className="sx-muted">
+                  The executable changed since this observation. Run a new check.
+                </p>
+              )}
+              <button
+                type="button"
+                className="sx-button"
+                disabled={!environmentId || probingId !== null || !selected.probe?.supported}
+                onClick={() => void probe(selected.id)}
+              >
+                {probingId === selected.id ? "Checking version…" : "Run version probe"}
+              </button>
+              <p className="sx-muted">
+                {selected.probe?.supported
+                  ? "Runs one fixed version command when requested. A passing check confirms that command runs; account access and end-to-end tasks are unmeasured."
+                  : "No safe version probe is registered for this tool. Its configuration and authentication status remain visible above."}
+              </p>
+            </div>
             {selected.handoff && (
               <div className="sx-terminal-handoff">
                 <code>{selected.handoff.command}</code>

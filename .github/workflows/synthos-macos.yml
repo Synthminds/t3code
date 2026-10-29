@@ -2,6 +2,23 @@ name: SynthOS macOS Apple silicon
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/synthos-platform
+    paths:
+      - .github/workflows/synthos-macos.yml
+      - .github/actions/setup-ci-deps/**
+      - apps/desktop/**
+      - apps/server/**
+      - apps/web/**
+      - packages/**
+      - scripts/**
+      - patches/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .node-version
+      - vite.config.*
 
 permissions:
   contents: read

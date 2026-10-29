@@ -1,3 +1,4 @@
+import { SynthosContextManifest } from "./synthosContext.ts";
 import * as Schema from "effect/Schema";
 import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { CommandId, ProjectId, ThreadId } from "./baseSchemas.ts";
@@ -60,6 +61,7 @@ export const SynthosStatus = Schema.Literals([
 export const SynthosBinding = Schema.Struct({
   role: SynthosRole,
   modelSelection: ModelSelection,
+  backupModelSelection: Schema.optionalKey(ModelSelection),
   inputTokenLimit: PositiveInt.check(Schema.isLessThanOrEqualTo(125000)),
   outputTokenLimit: PositiveInt.check(Schema.isLessThanOrEqualTo(64000)),
 });
@@ -95,6 +97,7 @@ export const SynthosAttempt = Schema.Struct({
   id: ShortText,
   commandId: CommandId,
   threadId: ThreadId,
+  modelSelection: Schema.optionalKey(ModelSelection),
   stage: SynthosStage,
   role: SynthosRole,
   status: Schema.Literals(["pending", "running", "completed", "failed", "cancelled"]),
@@ -110,6 +113,7 @@ export const SynthosAttempt = Schema.Struct({
   checkPassed: Schema.NullOr(Schema.Boolean),
   packetHtml: Schema.String,
   packetHash: Schema.String,
+  contextManifest: Schema.optional(SynthosContextManifest),
   packetOmitted: Schema.optional(Schema.Boolean),
   resultOmitted: Schema.optional(Schema.Boolean),
 });
@@ -119,6 +123,7 @@ export const SynthosWorkflow = Schema.Struct({
   projectId: ProjectId,
   title: ShortText,
   task: Description,
+  reviewMode: Schema.optionalKey(Schema.Literals(["standard", "independent"])),
   policyHash: Schema.String,
   policyVersion: Schema.String,
   detailOmitted: Schema.optional(Schema.Boolean),
@@ -160,6 +165,7 @@ export const SynthosCreateInput = Schema.Struct({
   projectId: ProjectId,
   title: ShortText,
   task: Description,
+  reviewMode: Schema.optionalKey(Schema.Literals(["standard", "independent"])),
   bindings: Schema.Array(SynthosBinding).check(Schema.isMaxLength(10)),
   checkCommands: Schema.Array(ShortText).check(Schema.isMaxLength(20)),
   baseRef: Schema.optional(ShortText),

@@ -1,3 +1,5 @@
+import { SynthosGraphCommand, SynthosGraphResult } from "./synthosGraph.ts";
+import { SynthosContextCommand, SynthosContextResult } from "./synthosContext.ts";
 import { SynthosConnectionCommand, SynthosConnectionResult } from "./synthosConnections.ts";
 import * as Context from "effect/Context";
 import type * as DateTime from "effect/DateTime";
@@ -902,6 +904,24 @@ class EnvironmentSynthosConnectionsHttpApi extends HttpApiGroup.make("synthosCon
   }).middleware(EnvironmentAuthenticatedAuth),
 ) {}
 
+class EnvironmentSynthosGraphHttpApi extends HttpApiGroup.make("synthosGraph").add(
+  HttpApiEndpoint.post("execute", "/api/synthos/graph", {
+    headers: OptionalBearerHeaders,
+    payload: SynthosGraphCommand,
+    success: SynthosGraphResult,
+    error: [SynthosRequestError, EnvironmentScopeRequiredError, EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
+class EnvironmentSynthosContextHttpApi extends HttpApiGroup.make("synthosContext").add(
+  HttpApiEndpoint.post("execute", "/api/synthos/context", {
+    headers: OptionalBearerHeaders,
+    payload: SynthosContextCommand,
+    success: SynthosContextResult,
+    error: [SynthosRequestError, EnvironmentScopeRequiredError, EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 class EnvironmentSynthosProfilesHttpApi extends HttpApiGroup.make("synthosProfiles").add(
   HttpApiEndpoint.post("execute", "/api/synthos/profiles", {
     headers: OptionalBearerHeaders,
@@ -923,6 +943,8 @@ class EnvironmentSynthosKnowledgeHttpApi extends HttpApiGroup.make("synthosKnowl
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentSynthosKnowledgeHttpApi)
   .add(EnvironmentSynthosProfilesHttpApi)
+  .add(EnvironmentSynthosContextHttpApi)
+  .add(EnvironmentSynthosGraphHttpApi)
   .add(EnvironmentSynthosConnectionsHttpApi)
   .add(EnvironmentSynthosHttpApi)
   .add(EnvironmentMetadataHttpApi)

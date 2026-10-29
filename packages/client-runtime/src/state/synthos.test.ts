@@ -14,6 +14,16 @@ import { createSynthosRequestCommand, type SynthosRequest } from "./synthos.ts";
 
 const REMOTE_ID = EnvironmentId.make("remote-environment");
 const COOKIE_ID = EnvironmentId.make("cookie-environment");
+const probe = {
+  toolId: "ripgrep",
+  state: "working",
+  scope: "cli_version",
+  checkedAt: "2026-10-29T00:00:00Z",
+  executableFingerprint: "a".repeat(64),
+  reason: "completed",
+  exitCode: 0,
+  outputBytes: 64,
+};
 const policy = {
   version: "test-policy",
   sha256: "a".repeat(64),
@@ -69,15 +79,31 @@ const makeHarness = Effect.fn("TestSynthosRequest.makeHarness")(function* () {
   } as EnvironmentRegistry.EnvironmentRegistry["Service"];
   const fetcher: typeof globalThis.fetch = async (request, init) => {
     const url = String(request);
-    calls.push({ url, init: init ?? {} });
+    const body = init?.body == null ? null : await new Response(init.body).text();
+    calls.push({ url, init: { ...init, ...(body === null ? {} : { body }) } });
+    if (body?.includes('"type":"tools.probe"')) return Response.json({ probe });
     return Response.json(
       url.endsWith("/policy")
         ? policy
         : url.endsWith("/profiles")
           ? { type: "list", profiles: [], truncated: false }
-          : url.endsWith("/connections")
-            ? { connections: [] }
-            : { workflows: [] },
+          : url.endsWith("/context")
+            ? {
+                type: "settings",
+                settings: {
+                  projectId: "project-1",
+                  version: 0,
+                  autoRecall: false,
+                  approvedNotes: [],
+                  projectFolders: [],
+                  neighborhoodFolders: [],
+                  pinnedNotes: [],
+                  excludedPaths: [],
+                },
+              }
+            : url.endsWith("/connections")
+              ? { connections: [] }
+              : { workflows: [] },
     );
   };
   const runtime = Atom.runtime(
@@ -125,12 +151,41 @@ describe("SynthOS environment requests", () => {
       expect(profiles._tag).toBe("Success");
       if (profiles._tag === "Success")
         expect(profiles.value).toEqual({ type: "list", profiles: [], truncated: false });
-      expect(harness.selected).toEqual([REMOTE_ID, COOKIE_ID, REMOTE_ID, COOKIE_ID]);
+      const context = yield* harness.run(REMOTE_ID, {
+        path: "/api/synthos/context",
+        method: "POST",
+        body: { type: "get_settings", projectId: "project-1" },
+      });
+      expect(context._tag).toBe("Success");
+      const measured = yield* harness.run(REMOTE_ID, {
+        path: "/api/synthos/connections",
+        method: "POST",
+        body: { type: "tools.probe", toolId: "ripgrep" },
+      });
+      expect(measured._tag).toBe("Success");
+      if (measured._tag === "Success") expect(measured.value).toEqual({ probe });
+      expect(new Headers(harness.calls[5]?.init.headers).get("authorization")).toBe(
+        "Bearer selected-token",
+      );
+      expect(harness.calls[5]?.init.body).toBe('{"type":"tools.probe","toolId":"ripgrep"}');
+      expect(new Headers(harness.calls[4]?.init.headers).get("authorization")).toBe(
+        "Bearer selected-token",
+      );
+      expect(harness.selected).toEqual([
+        REMOTE_ID,
+        COOKIE_ID,
+        REMOTE_ID,
+        COOKIE_ID,
+        REMOTE_ID,
+        REMOTE_ID,
+      ]);
       expect(harness.calls.map((call) => call.url)).toEqual([
         "https://selected.example.test/api/synthos/workflows",
         "https://cookie.example.test/api/synthos/connections",
         "https://selected.example.test/api/synthos/policy",
         "https://cookie.example.test/api/synthos/profiles",
+        "https://selected.example.test/api/synthos/context",
+        "https://selected.example.test/api/synthos/connections",
       ]);
       expect(new Headers(harness.calls[0]?.init.headers).get("authorization")).toBe(
         "Bearer selected-token",
@@ -153,7 +208,14 @@ describe("SynthOS environment requests", () => {
           { path: "https://outside.example.test/api/synthos/workflows", method: "GET" },
           { path: "/api/filesystem/read", method: "POST", body: { path: "/secret" } },
           { path: "/api/synthos/connections", method: "GET" },
+          { path: "/api/synthos/connections", method: "POST", body: { type: "tools.probe" } },
           { path: "/api/synthos/policy", method: "POST", body: {} },
+          { path: "/api/synthos/context", method: "GET" },
+          {
+            path: "/api/synthos/context",
+            method: "POST",
+            body: { type: "save_settings", projectId: "project-1" },
+          },
           { path: "/api/synthos/profiles", method: "GET" },
           { path: "/api/synthos/profiles", method: "POST", body: { type: "upsert" } },
           { path: "/api/synthos/workflows/..", method: "GET" },

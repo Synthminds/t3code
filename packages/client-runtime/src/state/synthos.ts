@@ -1,9 +1,11 @@
+import { SynthosGraphCommand } from "@t3tools/contracts";
 import {
   SynthosCreateInput,
   SynthosCommandInput,
   SynthosConnectionCommand,
   SynthosKnowledgeCommand,
   SynthosProfileCommand,
+  SynthosContextCommand,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -23,6 +25,8 @@ const decodeCreateWorkflow = Schema.decodeUnknownEffect(SynthosCreateInput);
 const decodeWorkflowCommand = Schema.decodeUnknownEffect(SynthosCommandInput);
 const decodeKnowledgeCommand = Schema.decodeUnknownEffect(SynthosKnowledgeCommand);
 const decodeProfileCommand = Schema.decodeUnknownEffect(SynthosProfileCommand);
+const decodeGraphCommand = Schema.decodeUnknownEffect(SynthosGraphCommand);
+const decodeContextCommand = Schema.decodeUnknownEffect(SynthosContextCommand);
 
 export interface SynthosRequest {
   readonly path: string;
@@ -51,6 +55,36 @@ export function createSynthosRequestCommand<R, E>(
         RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
       );
       const common = { prepared, signer, remoteAuthorization, timeoutMs: 30_000 };
+      if (input.path === "/api/synthos/graph" && input.method === "POST") {
+        const payload = yield* decodeGraphCommand(input.body);
+        return yield* executeAuthenticatedEnvironmentHttpRequest({
+          ...common,
+          group: "synthosGraph",
+          method: "POST",
+          url: (urls) => urls.execute(),
+          request: ({ client, headers }) =>
+            client.execute({ headers, payload } as Parameters<typeof client.execute>[0]),
+        });
+      }
+      if (input.path === "/api/synthos/context" && input.method === "POST") {
+        const payload = yield* decodeContextCommand(input.body);
+        return yield* executeAuthenticatedEnvironmentHttpRequest({
+          ...common,
+          group: "synthosContext",
+          method: "POST",
+          url: (urls) => urls.execute(),
+          request: ({ client, headers }) => {
+            switch (payload.type) {
+              case "get_settings":
+                return client.execute({ headers, payload });
+              case "save_settings":
+                return client.execute({ headers, payload });
+              case "preview":
+                return client.execute({ headers, payload });
+            }
+          },
+        });
+      }
       if (input.path === "/api/synthos/profiles" && input.method === "POST") {
         const payload = yield* decodeProfileCommand(input.body);
         return yield* executeAuthenticatedEnvironmentHttpRequest({
@@ -115,6 +149,8 @@ export function createSynthosRequestCommand<R, E>(
           request: ({ client, headers }) => {
             switch (payload.type) {
               case "status":
+                return client.execute({ headers, payload });
+              case "tools.probe":
                 return client.execute({ headers, payload });
               case "tools.inventory":
                 return client.execute({ headers, payload });

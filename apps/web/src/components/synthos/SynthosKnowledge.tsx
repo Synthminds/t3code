@@ -1,3 +1,4 @@
+import { SynthosGraphExplorer } from "./SynthosGraphExplorer";
 import { SynthosKnowledgeGraph } from "./SynthosKnowledgeGraph";
 /* oxlint-disable shadcn/no-unknown-classes -- SynthOS uses a scoped, standalone stylesheet. */
 import { useRef, useState } from "react";
@@ -12,9 +13,11 @@ type Source = "obsidian" | "mem";
 export function SynthosKnowledge({
   environmentId,
   statuses,
+  activeWorkflow,
 }: {
   environmentId: EnvironmentId | null;
   statuses: readonly SynthosConnectionStatus[];
+  activeWorkflow?: { id: string; projectId: import("@t3tools/contracts").ProjectId } | undefined;
 }) {
   const [source, setSource] = useState<Source>("obsidian");
   const [view, setView] = useState<"graph" | "notes">("graph");
@@ -44,10 +47,13 @@ export function SynthosKnowledge({
         </button>
       </nav>
       {view === "graph" ? (
-        <SynthosKnowledgeGraph
-          key={environmentId ?? "disconnected"}
-          environmentId={environmentId}
-        />
+        <>
+          <SynthosGraphExplorer environmentId={environmentId} activeWorkflow={activeWorkflow} />
+          <SynthosKnowledgeGraph
+            key={environmentId ?? "disconnected"}
+            environmentId={environmentId}
+          />
+        </>
       ) : (
         <KnowledgeSource
           key={`${environmentId}:${source}`}

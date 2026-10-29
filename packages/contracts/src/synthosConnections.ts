@@ -55,9 +55,37 @@ export const SynthosDeviceProposal = Schema.Struct({
 });
 export type SynthosDeviceProposal = typeof SynthosDeviceProposal.Type;
 
+export const SynthosToolProbe = Schema.Struct({
+  toolId: ShortText,
+  state: Schema.Literals(["working", "failed"]),
+  scope: Schema.Literal("cli_version"),
+  checkedAt: Schema.String,
+  executableFingerprint: Schema.NullOr(ShortText),
+  reason: Schema.Literals([
+    "completed",
+    "nonzero_exit",
+    "timeout",
+    "output_limit",
+    "spawn_failed",
+    "missing",
+    "unsupported",
+  ]),
+  exitCode: Schema.NullOr(Schema.Int),
+  outputBytes: Schema.Int,
+});
+export type SynthosToolProbe = typeof SynthosToolProbe.Type;
+export const SynthosToolProbeStatus = Schema.Struct({
+  supported: Schema.Boolean,
+  state: Schema.Literals(["unmeasured", "working", "failed", "stale"]),
+  scope: Schema.Literal("cli_version"),
+  observation: Schema.NullOr(SynthosToolProbe),
+});
+export type SynthosToolProbeStatus = typeof SynthosToolProbeStatus.Type;
+
 export const SynthosConnectionCommand = Schema.Union([
   Schema.Struct({ type: Schema.Literal("status") }),
   Schema.Struct({ type: Schema.Literal("tools.inventory") }),
+  Schema.Struct({ type: Schema.Literal("tools.probe"), toolId: ShortText }),
   Schema.Struct({
     type: Schema.Literal("mail.list"),
     inboxId: ShortText,
@@ -100,6 +128,7 @@ export type SynthosConnectionCommand = typeof SynthosConnectionCommand.Type;
 export function synthosConnectionRequiredScope(
   command: SynthosConnectionCommand,
 ): AuthEnvironmentScope {
+  if (command.type === "tools.probe") return "orchestration:operate";
   if (command.type === "obsidian.write") return "filesystem:write";
   if (command.type.startsWith("obsidian.")) return "filesystem:read";
   return ["mail.prepare", "mail.send", "mail.reconcile", "mem.write", "device.intake"].includes(
@@ -110,6 +139,7 @@ export function synthosConnectionRequiredScope(
 }
 
 export const SynthosNativeTool = Schema.Struct({
+  probe: Schema.optionalKey(SynthosToolProbeStatus),
   id: Schema.String,
   name: Schema.String,
   description: Schema.String,
@@ -161,6 +191,7 @@ export type SynthosMemNote = typeof SynthosMemNote.Type;
 export const SynthosConnectionResult = Schema.Union([
   Schema.Struct({ connections: Schema.Array(SynthosConnectionStatus) }),
   SynthosNativeToolInventory,
+  Schema.Struct({ probe: SynthosToolProbe }),
   Schema.Struct({
     messages: Schema.Array(
       Schema.Struct({

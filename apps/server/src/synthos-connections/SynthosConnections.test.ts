@@ -1,3 +1,5 @@
+import * as NativeToolProbes from "./NativeToolProbes.ts";
+import probesMigration from "../persistence/Migrations/080_SynthosToolProbes.ts";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -11,7 +13,8 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import migration from "../persistence/Migrations/074_SynthosConnections.ts";
+import connectionsMigration from "../persistence/Migrations/074_SynthosConnections.ts";
+const migration = Effect.andThen(connectionsMigration, probesMigration);
 import * as ConnectionHttp from "./ConnectionHttp.ts";
 import * as ConnectionsConfig from "./ConnectionsConfig.ts";
 import * as ObsidianVault from "./ObsidianVault.ts";
@@ -51,6 +54,7 @@ function fixture(
     Layer.provide(RemoteConnections.layer.pipe(Layer.provide(http))),
     Layer.provide(ObsidianVault.layer({})),
     Layer.provide(NativeToolInventory.layer),
+    Layer.provide(NativeToolProbes.layer.pipe(Layer.provide(NativeToolProbes.layerRunner()))),
     Layer.provide(settings),
     Layer.provideMerge(database),
     Layer.provide(NodeServices.layer),
@@ -83,6 +87,14 @@ describe("SynthosConnections", () => {
         )
         .pipe(Effect.flip);
       expect(denied.reason).toBe("forbidden");
+      expect(
+        (yield* service
+          .execute(
+            { sessionId: "guest", scopes: ["orchestration:read"] },
+            { type: "tools.probe", toolId: "ripgrep" },
+          )
+          .pipe(Effect.flip)).reason,
+      ).toBe("forbidden");
       expect(
         (yield* service
           .execute(actor, { type: "obsidian.read", path: "note.md" })

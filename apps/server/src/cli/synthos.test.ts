@@ -12,6 +12,7 @@ import {
   SynthosCommandInput,
   SynthosConnectionCommand,
   SynthosCreateInput,
+  type SynthosContextCommand,
   type SynthosKnowledgeCommand,
   type SynthosProfileCommand,
   type AuthEnvironmentScope,
@@ -106,6 +107,149 @@ const authFixture = () => {
 };
 
 describe("SynthOS CLI authenticated transport", () => {
+  it.effect(
+    "preserves context versions and uses read scope for previews and old attempt inspection",
+    () =>
+      Effect.gen(function* () {
+        const auth = authFixture();
+        const calls: unknown[] = [];
+        const settings = {
+          autoRecall: true,
+          approvedNotes: ["GCH/Missions/decision.md"],
+          projectFolders: ["Projects/acme"],
+          neighborhoodFolders: ["Engineering"],
+          pinnedNotes: [],
+          excludedPaths: ["Engineering/private.md"],
+        };
+        const client = HttpClient.make((request) => {
+          assert.equal(request.headers.authorization, "Bearer temporary-fixture-token");
+          if (request.method === "GET") {
+            assert.equal(
+              new URL(request.url).pathname,
+              "/api/synthos/workflows/workflow%3Afixture",
+            );
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({
+                  workflow: {
+                    ...workflow,
+                    attempts: [
+                      {
+                        id: "old-attempt",
+                        commandId: CommandId.make("old-command"),
+                        threadId: "old-thread",
+                        stage: "planning",
+                        role: "architect",
+                        status: "completed",
+                        loop: 1,
+                        inputReserved: 1000,
+                        outputReserved: 1000,
+                        inputTokens: 10,
+                        outputTokens: 10,
+                        usageComplete: true,
+                        result: "A historical result",
+                        evidenceHash: null,
+                        candidateRef: null,
+                        checkPassed: null,
+                        packetHtml: "old-packet",
+                        packetHash: "old-hash",
+                      },
+                    ],
+                  },
+                  events: [],
+                }),
+              ),
+            );
+          }
+          assert.equal(new URL(request.url).pathname, "/api/synthos/context");
+          if (request.body._tag !== "Uint8Array") return Effect.die("Expected JSON request");
+          const input = decodeJson(new TextDecoder().decode(request.body.body));
+          calls.push(input);
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              Response.json(
+                calls.length === 3
+                  ? {
+                      type: "preview",
+                      manifest: {
+                        version: 1,
+                        projectId: workflow.projectId,
+                        settingsVersion: 2,
+                        role: "architect",
+                        repositoryRevision: null,
+                        routes: [],
+                        sources: [],
+                        omissions: [],
+                        status: "degraded",
+                        neighborhoodUsed: false,
+                        query: "memory capture",
+                        bytes: 0,
+                        estimatedTokens: 0,
+                        hash: "fixture-hash",
+                      },
+                    }
+                  : {
+                      type: "settings",
+                      settings: { ...settings, projectId: workflow.projectId, version: 2 },
+                    },
+              ),
+            ),
+          );
+        });
+        const commands: ReadonlyArray<SynthosContextCommand> = [
+          { type: "get_settings", projectId: workflow.projectId },
+          { type: "save_settings", projectId: workflow.projectId, expectedVersion: 1, settings },
+          {
+            type: "preview",
+            projectId: workflow.projectId,
+            task: "memory capture",
+            role: "architect",
+          },
+        ];
+        const run = (request: SynthosCliRequest) =>
+          requestSynthos(origin, request).pipe(
+            Effect.provide(auth.layer),
+            Effect.provideService(HttpClient.HttpClient, client),
+          );
+        for (const input of commands) yield* run({ type: "context", input });
+        assert.deepEqual(
+          yield* run({
+            type: "context_inspect",
+            workflowId: workflow.id,
+            attemptId: "old-attempt",
+          }),
+          {
+            workflowId: workflow.id,
+            attempts: [
+              {
+                attemptId: "old-attempt",
+                role: "architect",
+                status: "unavailable",
+                manifest: null,
+              },
+            ],
+          },
+        );
+        const missing = yield* run({
+          type: "context_inspect",
+          workflowId: workflow.id,
+          attemptId: "missing",
+        }).pipe(Effect.flip);
+        assert.equal(missing.serverReason, "attempt_not_found");
+        assert.deepEqual(calls, [...commands]);
+        assert.deepEqual(auth.issuedScopes, [
+          [AuthOrchestrationReadScope],
+          [AuthOrchestrationOperateScope],
+          [AuthOrchestrationReadScope],
+          [AuthOrchestrationReadScope],
+          [AuthOrchestrationReadScope],
+        ]);
+        assert.equal(auth.revoked.length, 5);
+      }),
+  );
+
   it.effect("reads and saves crew profiles with exact scopes and version preconditions", () =>
     Effect.gen(function* () {
       const auth = authFixture();

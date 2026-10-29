@@ -1,3 +1,6 @@
+import Migration0080 from "./Migrations/080_SynthosToolProbes.ts";
+import Migration0079 from "./Migrations/079_SynthosGraph.ts";
+import Migration0078 from "./Migrations/078_SynthosContext.ts";
 import * as Migrator from "effect/sql/Migrator";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -160,6 +163,9 @@ const migrationEntries = [
   [75, "SynthosPolicySnapshots", Migration0075],
   [76, "SynthosKnowledge", Migration0076],
   [77, "SynthosProfiles", Migration0077],
+  [78, "SynthosContext", Migration0078],
+  [79, "SynthosGraph", Migration0079],
+  [80, "SynthosToolProbes", Migration0080],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

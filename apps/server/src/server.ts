@@ -1,3 +1,7 @@
+import * as SynthosGraph from "./synthos-graph/SynthosGraph.ts";
+import * as SynthosGraphHttp from "./synthos-graph/http.ts";
+import * as SynthosContext from "./synthos-context/SynthosContext.ts";
+import * as SynthosContextHttp from "./synthos-context/http.ts";
 import * as Scheduler from "./scheduling/Scheduler.ts";
 import * as SynthosHttp from "./synthos/http.ts";
 import * as SynthosWorkflow from "./synthos/SynthosWorkflow.ts";
@@ -737,6 +741,8 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provide(SynthosConnectionsHttp.layer),
       Layer.provide(SynthosKnowledgeHttp.layer),
       Layer.provide(SynthosProfilesHttp.layer),
+      Layer.provide(SynthosContextHttp.layer),
+      Layer.provide(SynthosGraphHttp.layer),
       Layer.provide(PullRequestHttp.layer),
       Layer.provide(ProjectHttp.layer),
       Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
@@ -769,6 +775,8 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(SynthosConnections.layerLive),
   Layer.provide(SynthosKnowledge.layer),
   Layer.provide(SynthosProfiles.layer),
+  Layer.provide(SynthosContext.layerLive),
+  Layer.provide(SynthosGraph.layer),
   // delegate_task to a linked environment, from /mcp and the follower above.
   Layer.provide(RemoteDelegation.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
   // Links agents ask for: shown in a thread from /mcp, answered over WebSocket.

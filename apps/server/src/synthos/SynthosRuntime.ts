@@ -1,3 +1,6 @@
+import { specialistBrief } from "./specialists.ts";
+import * as SynthosContext from "../synthos-context/SynthosContext.ts";
+import { verifyManifest } from "../synthos-context/manifest.ts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Evidence and dispatch identities need deterministic digests.
 import * as NodeCrypto from "node:crypto";
 import {
@@ -67,6 +70,7 @@ const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const checkpoints = yield* CheckpointStore.CheckpointStore;
   const projects = yield* ProjectService.ProjectService;
+  const contexts = yield* SynthosContext.SynthosContext;
   const candidateRefFor = (key: string) =>
     CheckpointRef.make(
       `refs/t3/synthos/${NodeCrypto.createHash("sha256").update(key).digest("hex")}`,
@@ -128,6 +132,23 @@ const make = Effect.gen(function* () {
         cause: new Error("frozen_packet_integrity_failed"),
       });
     }
+    if (attempt.contextManifest) {
+      if (
+        !verifyManifest(attempt.contextManifest) ||
+        !attempt.packetHtml.includes(attempt.contextManifest.hash)
+      )
+        return yield* new SynthosRuntimeError({
+          operation: "launch",
+          cause: new Error("context_integrity_failed"),
+        });
+      yield* contexts
+        .validate(
+          attempt.contextManifest,
+          workflow.worktreePath ?? project.value.workspaceRoot,
+          workflow.worktreePath ? undefined : workflow.baseRef,
+        )
+        .pipe(Effect.mapError((cause) => new SynthosRuntimeError({ operation: "launch", cause })));
+    }
     const prompt = `${GCH_POLICY.canonicalRules}\n\n${attempt.packetHtml}`;
     // Reserve against the full packet before dispatch. An oversized accumulated context is never silently truncated.
     if (Math.ceil(Buffer.byteLength(prompt, "utf8") / 3) > binding.inputTokenLimit) {
@@ -142,7 +163,7 @@ const make = Effect.gen(function* () {
         threadId: attempt.threadId,
         projectId: workflow.projectId,
         title: `${workflow.title} · ${attempt.role}`.slice(0, 240),
-        modelSelection: binding.modelSelection,
+        modelSelection: attempt.modelSelection ?? binding.modelSelection,
         runtimeMode: "approval-required",
         interactionMode:
           attempt.stage === "planning" || attempt.stage === "review" || attempt.role === "advisor"
@@ -346,13 +367,15 @@ export function roleGoal(role: SynthosAttempt["role"], stage: SynthosAttempt["st
     advisor: "Advise on risky seams and minimum verification. Do not edit files or publish.",
   };
   return (
-    goals[role] ??
-    (stage === "check"
-      ? "Execute each exact required verification command through T3 tools and report observed outcomes. Preserve the candidate files and test oracle."
-      : stage === "review"
-        ? "Adversarially review the candidate and its verification evidence. Report defects, risks and uncertainty. Preserve all candidate files. Do not publish or merge."
-        : stage === "build"
-          ? "Implement the scoped plan in this isolated workspace. Preserve existing test expectations; do not weaken checks to claim success. Do not publish or merge."
-          : "Inspect the task and workspace, then produce a plan with acceptance criteria. Do not edit files or publish.")
+    specialistBrief(role, stage) +
+    " " +
+    (goals[role] ??
+      (stage === "check"
+        ? "Execute each exact required verification command through T3 tools and report observed outcomes. Preserve the candidate files and test oracle."
+        : stage === "review"
+          ? "Adversarially review the candidate and its verification evidence. Report defects, risks and uncertainty. Preserve all candidate files. Do not publish or merge."
+          : stage === "build"
+            ? "Implement the scoped plan in this isolated workspace. Preserve existing test expectations; do not weaken checks to claim success. Do not publish or merge."
+            : "Inspect the task and workspace, then produce a plan with acceptance criteria. Do not edit files or publish."))
   );
 }

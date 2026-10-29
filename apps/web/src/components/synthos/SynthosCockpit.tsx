@@ -8,6 +8,7 @@ import {
   Bike,
   BookOpen,
   CarFront,
+  CassetteTape,
   Check,
   ChevronRight,
   CirclePause,
@@ -42,7 +43,7 @@ import {
 } from "../../state/environments";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { SidebarInset, SidebarTrigger } from "../ui/sidebar";
-import { NightRidersScene, type NightRiderId } from "./scene/NightRidersScene";
+import { NightRidersScene } from "./scene/NightRidersScene";
 import { useSynthosWorkflows, useSynthosWorkflowDetail } from "./useSynthosWorkflows";
 import { synthosRequest } from "./synthosRequest";
 import { SynthosKnowledge } from "./SynthosKnowledge";
@@ -53,6 +54,7 @@ import { SynthosCrewProfiles } from "./SynthosCrewProfiles";
 import { SynthosAttentionInbox } from "./SynthosAttentionInbox";
 import { SynthosMemoryCapture } from "./SynthosMemoryCapture";
 import { SynthosUsage } from "./SynthosUsage";
+import { SynthosContextDeck } from "./SynthosContextDeck";
 import { synthosAttention } from "./synthosAttention";
 import "./synthos.css";
 
@@ -64,6 +66,7 @@ const panels = [
   { id: "decisions", label: "Decisions", icon: ShieldCheck },
   { id: "tools", label: "Tools + mail", icon: Wrench },
   { id: "devices", label: "Devices", icon: Radio },
+  { id: "context", label: "Context", icon: CassetteTape },
 ] as const;
 type Panel = (typeof panels)[number]["id"];
 const roadCrew = [
@@ -178,7 +181,7 @@ function CockpitEnvironment({
     : [];
   const [panel, setPanel] = useState<Panel>("cockpit");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedRole, setSelectedRole] = useState<NightRiderId>("lead");
+  const [selectedRole, setSelectedRole] = useState<SynthosRole>("lead");
   const [paused, setPaused] = useState(false);
   const [focused, setFocused] = useState(false);
   const [camera, setCamera] = useState<0 | 1 | 2>(0);
@@ -291,7 +294,10 @@ function CockpitEnvironment({
               moving={Boolean(running)}
               paused={paused}
               camera={camera}
-              onSelect={setSelectedRole}
+              onSelect={(role) => {
+                setSelectedRole(role);
+                setPanel("context");
+              }}
             />
             <div className="sx-scene-status">
               <span className={`sx-led ${running ? "is-on" : ""}`} />
@@ -324,7 +330,10 @@ function CockpitEnvironment({
               <button
                 type="button"
                 key={role.id}
-                onClick={() => setSelectedRole(role.id)}
+                onClick={() => {
+                  setSelectedRole(role.id);
+                  setPanel("context");
+                }}
                 aria-pressed={selectedRole === role.id}
                 className="sx-rider"
                 style={{ "--role-accent": role.accent } as CSSProperties}
@@ -435,7 +444,10 @@ function CockpitEnvironment({
           connected={connected}
           workflow={selected}
         />
-        {(panel === "cockpit" || panel === "graph" || panel === "decisions") && (
+        {(panel === "cockpit" ||
+          panel === "graph" ||
+          panel === "decisions" ||
+          panel === "context") && (
           <div className="sx-section-heading">
             <div>
               <h2>
@@ -443,14 +455,18 @@ function CockpitEnvironment({
                   ? "Mission control"
                   : panel === "graph"
                     ? "Workflow circuit"
-                    : "Decision desk"}
+                    : panel === "context"
+                      ? "Context deck"
+                      : "Decision desk"}
               </h2>
               <p>
                 {panel === "cockpit"
                   ? "Set the mission. Bind your crew. Inspect every handoff."
                   : panel === "graph"
                     ? "From intent to evidence. Every stage has a receipt."
-                    : "Review the evidence before authorizing the next step."}
+                    : panel === "context"
+                      ? "Tune the signal. Inspect what each agent receives."
+                      : "Review the evidence before authorizing the next step."}
               </p>
             </div>
             <div className="sx-workflow-picker">
@@ -578,8 +594,23 @@ function CockpitEnvironment({
             workflow={detail.ready ? (selected ?? null) : null}
           />
         </div>
+        {panel === "context" && (
+          <SynthosContextDeck
+            key={`${environmentId}:${selected?.id ?? "none"}`}
+            environmentId={environmentId}
+            connected={connected}
+            workflow={detail.ready ? selected : undefined}
+            loading={detail.loading}
+            role={selectedRole}
+            onRoleChange={setSelectedRole}
+          />
+        )}
         {panel === "knowledge" && (
-          <SynthosKnowledge environmentId={environmentId} statuses={statuses} />
+          <SynthosKnowledge
+            environmentId={environmentId}
+            statuses={statuses}
+            activeWorkflow={selected}
+          />
         )}
         {panel === "tools" && <SynthosTools environmentId={environmentId} statuses={statuses} />}
         {panel === "devices" && (
@@ -684,6 +715,7 @@ function MissionComposer({
   const [projectId, setProjectId] = useState("");
   const project = projects.find((item) => item.id === projectId) ?? projects[0];
   const [task, setTask] = useState("");
+  const [independentReview, setIndependentReview] = useState(false);
   const [roles, setRoles] = useState<Partial<Record<SynthosRole, SynthosBinding>>>({});
   const [budget, setBudget] = useState<SynthosProfileInput["budget"]>(SYNTHOS_DEFAULT_BUDGET);
   const [checks, setChecks] = useState("");
@@ -747,6 +779,38 @@ function MissionComposer({
           </select>
         </label>
         {binding && (
+          <label className="sx-field">
+            Backup model
+            <select
+              value={
+                binding.backupModelSelection
+                  ? `${binding.backupModelSelection.instanceId}:${binding.backupModelSelection.model}`
+                  : ""
+              }
+              onChange={(event) => {
+                const backup = choices.find((choice) => choice.key === event.target.value);
+                setRoles((current) => {
+                  const { backupModelSelection: _old, ...primary } = binding;
+                  return {
+                    ...current,
+                    [role]: {
+                      ...primary,
+                      ...(backup ? { backupModelSelection: backup.selection } : {}),
+                    },
+                  };
+                });
+              }}
+            >
+              <option value="">No automatic fallback</option>
+              {choices.map((choice) => (
+                <option key={choice.key} value={choice.key}>
+                  {choice.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {binding && (
           <div className="sx-role-reservations">
             <label className="sx-field">
               Input tokens
@@ -806,6 +870,7 @@ function MissionComposer({
     const signature = JSON.stringify({
       projectId: project.id,
       task: task.trim(),
+      reviewMode: independentReview ? "independent" : "standard",
       bindings,
       checks,
       budget,
@@ -824,6 +889,7 @@ function MissionComposer({
           projectId: project.id,
           title: task.trim().split("\n")[0]!.slice(0, 100),
           task: task.trim(),
+          reviewMode: independentReview ? "independent" : "standard",
           bindings,
           checkCommands,
           budget,
@@ -875,6 +941,16 @@ function MissionComposer({
             maxLength={12000}
             required
           />
+        </label>
+        <label className="sx-field">
+          <span>
+            <input
+              type="checkbox"
+              checked={independentReview}
+              onChange={(event) => setIndependentReview(event.target.checked)}
+            />{" "}
+            Require independent review for a sensitive or broad-impact mission
+          </span>
         </label>
         <SynthosCrewProfiles
           environmentId={environmentId}
@@ -996,7 +1072,7 @@ function RoleInspector({
   workflow,
   environmentId,
 }: {
-  role: NightRiderId;
+  role: SynthosRole;
   workflow: SynthosWorkflow | undefined;
   environmentId: EnvironmentId | null;
 }) {
