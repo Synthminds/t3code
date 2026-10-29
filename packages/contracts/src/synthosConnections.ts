@@ -125,7 +125,7 @@ export const SynthosNativeTool = Schema.Struct({
     "memory",
     "connections",
   ]),
-  interface: Schema.Literals(["cli", "tui", "desktop"]),
+  interface: Schema.Literals(["cli", "tui", "desktop", "mcp"]),
   docs: Schema.String,
   commandName: Schema.NullOr(Schema.String),
   installed: Schema.Boolean,

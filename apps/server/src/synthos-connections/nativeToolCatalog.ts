@@ -74,12 +74,13 @@ export const nativeToolCatalog: ReadonlyArray<NativeToolDefinition> = [
   {
     id: "21st",
     name: "21st",
-    description: "Discover UI components and design resources.",
+    description:
+      "Discover UI components and design resources through the provider's 21st.dev MCP connection.",
     category: "assets",
-    interface: "cli",
+    interface: "mcp",
     docs: "https://help.21st.dev/ai/mcp",
-    commandName: "21st",
-    handoff: ["21st", "help"],
+    commandName: null,
+    handoff: null,
   },
   {
     id: "mermaid",
