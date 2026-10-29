@@ -6,6 +6,8 @@ import * as SynthosConnections from "./synthos-connections/SynthosConnections.ts
 import * as SynthosConnectionsHttp from "./synthos-connections/http.ts";
 import * as SynthosKnowledge from "./synthos-knowledge/SynthosKnowledge.ts";
 import * as SynthosKnowledgeHttp from "./synthos-knowledge/http.ts";
+import * as SynthosProfiles from "./synthos-profiles/SynthosProfiles.ts";
+import * as SynthosProfilesHttp from "./synthos-profiles/http.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
 import * as Random from "effect/Random";
@@ -734,6 +736,7 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provide(SynthosHttp.layer),
       Layer.provide(SynthosConnectionsHttp.layer),
       Layer.provide(SynthosKnowledgeHttp.layer),
+      Layer.provide(SynthosProfilesHttp.layer),
       Layer.provide(PullRequestHttp.layer),
       Layer.provide(ProjectHttp.layer),
       Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
@@ -765,6 +768,7 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(SynthosWorkflow.layer.pipe(Layer.provide(SynthosRuntime.layer))),
   Layer.provide(SynthosConnections.layerLive),
   Layer.provide(SynthosKnowledge.layer),
+  Layer.provide(SynthosProfiles.layer),
   // delegate_task to a linked environment, from /mcp and the follower above.
   Layer.provide(RemoteDelegation.layer.pipe(Layer.provide(ProjectionStoreV2.layer))),
   // Links agents ask for: shown in a thread from /mcp, answered over WebSocket.

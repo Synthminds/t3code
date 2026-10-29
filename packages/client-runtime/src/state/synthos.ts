@@ -3,6 +3,7 @@ import {
   SynthosCommandInput,
   SynthosConnectionCommand,
   SynthosKnowledgeCommand,
+  SynthosProfileCommand,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -21,6 +22,7 @@ const decodeConnectionCommand = Schema.decodeUnknownEffect(SynthosConnectionComm
 const decodeCreateWorkflow = Schema.decodeUnknownEffect(SynthosCreateInput);
 const decodeWorkflowCommand = Schema.decodeUnknownEffect(SynthosCommandInput);
 const decodeKnowledgeCommand = Schema.decodeUnknownEffect(SynthosKnowledgeCommand);
+const decodeProfileCommand = Schema.decodeUnknownEffect(SynthosProfileCommand);
 
 export interface SynthosRequest {
   readonly path: string;
@@ -49,6 +51,28 @@ export function createSynthosRequestCommand<R, E>(
         RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
       );
       const common = { prepared, signer, remoteAuthorization, timeoutMs: 30_000 };
+      if (input.path === "/api/synthos/profiles" && input.method === "POST") {
+        const payload = yield* decodeProfileCommand(input.body);
+        return yield* executeAuthenticatedEnvironmentHttpRequest({
+          ...common,
+          group: "synthosProfiles",
+          method: "POST",
+          url: (urls) => urls.execute(),
+          request: ({ client, headers }) => {
+            switch (payload.type) {
+              case "list":
+                return client.execute({ headers, payload });
+              case "get":
+                return client.execute({ headers, payload });
+              case "upsert":
+                return client.execute({ headers, payload });
+              case "delete":
+              case "restore":
+                return client.execute({ headers, payload });
+            }
+          },
+        });
+      }
       if (input.path === "/api/synthos/policy" && input.method === "GET") {
         return yield* executeAuthenticatedEnvironmentHttpRequest({
           ...common,

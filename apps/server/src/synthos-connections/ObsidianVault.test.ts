@@ -21,36 +21,37 @@ it.effect("requires configured vault access", () =>
   }).pipe(Effect.provide(ObsidianVault.layer({}))),
 );
 
-it.effect("creates notes exclusively and rejects stale writes without changing the file", () =>
+it.effect("creates nested notes and rejects conflicting writes", () =>
   Effect.gen(function* () {
     const root = yield* temporaryVault;
     yield* Effect.gen(function* () {
       const vault = yield* ObsidianVault.ObsidianVault;
+      const path = "GCH/Missions/note.md";
       const created = yield* vault.write({
-        path: "note.md",
+        path,
         content: "# Original\nText",
         expectedVersion: null,
       });
-      expect(yield* vault.read({ path: "note.md" })).toEqual(created);
+      expect(yield* vault.read({ path })).toEqual(created);
       expect(
         (yield* vault
-          .write({ path: "note.md", content: "Overwrite", expectedVersion: null })
+          .write({ path, content: "Overwrite", expectedVersion: null })
           .pipe(Effect.flip))._tag,
       ).toBe("ObsidianVaultConflictError");
       const saved = yield* vault.write({
-        path: "note.md",
+        path,
         content: "# New",
         expectedVersion: created.version,
       });
       expect(saved.version).not.toBe(created.version);
       const conflict = yield* vault
-        .write({ path: "note.md", content: "Stale", expectedVersion: created.version })
+        .write({ path, content: "Stale", expectedVersion: created.version })
         .pipe(Effect.flip);
       expect(conflict).toMatchObject({
         _tag: "ObsidianVaultConflictError",
         currentVersion: saved.version,
       });
-      expect((yield* vault.read({ path: "note.md" })).content).toBe("# New");
+      expect((yield* vault.read({ path })).content).toBe("# New");
     }).pipe(Effect.provide(ObsidianVault.layer({ vaultRoot: root })));
   }),
 );
@@ -110,7 +111,17 @@ it.effect("rejects traversal, hidden paths, symlinks, hard links and non-markdow
             .pipe(Effect.flip))._tag,
         ).toBe("ObsidianVaultValidationError");
       }
+      expect(
+        yield* vault
+          .write({
+            path: "linked-directory/new/created.md",
+            content: "Must stay inside the vault",
+            expectedVersion: null,
+          })
+          .pipe(Effect.flip),
+      ).toMatchObject({ _tag: "ObsidianVaultValidationError", reason: "symlink" });
     }).pipe(Effect.provide(ObsidianVault.layer({ vaultRoot: root })));
+    expect(yield* Effect.promise(() => NodeFSP.readdir(outside))).toEqual(["secret.md"]);
     expect(
       yield* Effect.promise(() => NodeFSP.readFile(NodePath.join(outside, "secret.md"), "utf8")),
     ).toBe("private");

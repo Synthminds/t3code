@@ -14,6 +14,7 @@ import {
   CirclePlay,
   GitBranch,
   Gauge,
+  Inbox,
   Menu,
   Radio,
   RefreshCw,
@@ -31,7 +32,9 @@ import type {
   SynthosConnectionStatus,
   SynthosRole,
   SynthosWorkflow,
+  SynthosProfileInput,
 } from "@t3tools/contracts";
+import { SYNTHOS_DEFAULT_BUDGET } from "@t3tools/contracts";
 import {
   useEnvironmentProviders,
   useEnvironments,
@@ -46,10 +49,16 @@ import { SynthosKnowledge } from "./SynthosKnowledge";
 import { SynthosTools } from "./SynthosTools";
 import { SynthosDevices } from "./SynthosDevices";
 import { SynthosPolicyInspector } from "./SynthosPolicyInspector";
+import { SynthosCrewProfiles } from "./SynthosCrewProfiles";
+import { SynthosAttentionInbox } from "./SynthosAttentionInbox";
+import { SynthosMemoryCapture } from "./SynthosMemoryCapture";
+import { SynthosUsage } from "./SynthosUsage";
+import { synthosAttention } from "./synthosAttention";
 import "./synthos.css";
 
 const panels = [
   { id: "cockpit", label: "Cockpit", icon: Gauge },
+  { id: "inbox", label: "Needs you", icon: Inbox },
   { id: "graph", label: "Workflow", icon: GitBranch },
   { id: "knowledge", label: "Knowledge", icon: BookOpen },
   { id: "decisions", label: "Decisions", icon: ShieldCheck },
@@ -195,6 +204,12 @@ function CockpitEnvironment({
     selected: selectedRole === role.id,
   }));
   const pending = workflows.data.filter((workflow) => workflow.status === "waiting_decision");
+  const attentionCount =
+    workflows.data.filter((workflow) => synthosAttention(workflow) !== null).length +
+    threads.filter(
+      (thread) =>
+        thread.hasPendingApprovals || thread.hasPendingUserInput || thread.pendingSubagentRequest,
+    ).length;
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- load connection configuration from the selected environment and abort it on unmount
   useEffect(() => {
@@ -368,6 +383,7 @@ function CockpitEnvironment({
             <item.icon size={17} />
             <span>{item.label}</span>
             {item.id === "decisions" && pending.length > 0 && <b>{pending.length}</b>}
+            {item.id === "inbox" && attentionCount > 0 && <b>{attentionCount}</b>}
           </button>
         ))}
       </nav>
@@ -464,7 +480,21 @@ function CockpitEnvironment({
             </div>
           </div>
         )}
-        {panel === "cockpit" && (
+        {panel === "inbox" && (
+          <SynthosAttentionInbox
+            workflows={workflows.data}
+            threads={threads}
+            connected={connected}
+            loading={workflows.loading}
+            error={workflows.error}
+            onRefresh={workflows.reload}
+            onSelect={(id, decision) => {
+              setSelectedId(id);
+              setPanel(decision ? "decisions" : "graph");
+            }}
+          />
+        )}
+        <div hidden={panel !== "cockpit"}>
           <div className="sx-dashboard-grid">
             <MissionComposer
               environmentId={environmentId}
@@ -520,8 +550,16 @@ function CockpitEnvironment({
               </section>
             </div>
           </div>
-        )}
+        </div>
         {panel === "graph" && <WorkflowGraph workflow={selected} environmentId={environmentId} />}
+        <div hidden={panel !== "graph"}>
+          <SynthosUsage
+            environmentId={environmentId}
+            connected={connected}
+            workflow={selected}
+            detailReady={detail.ready}
+          />
+        </div>
         {panel === "decisions" && (
           <DecisionDesk
             key={`${selected?.id ?? "none"}:${selected?.revision ?? 0}`}
@@ -533,6 +571,13 @@ function CockpitEnvironment({
             onCommand={command}
           />
         )}
+        <div hidden={panel !== "decisions"}>
+          <SynthosMemoryCapture
+            environmentId={environmentId}
+            connected={connected}
+            workflow={detail.ready ? (selected ?? null) : null}
+          />
+        </div>
         {panel === "knowledge" && (
           <SynthosKnowledge environmentId={environmentId} statuses={statuses} />
         )}
@@ -639,8 +684,114 @@ function MissionComposer({
   const [projectId, setProjectId] = useState("");
   const project = projects.find((item) => item.id === projectId) ?? projects[0];
   const [task, setTask] = useState("");
-  const [models, setModels] = useState<Partial<Record<SynthosRole, string>>>({});
+  const [roles, setRoles] = useState<Partial<Record<SynthosRole, SynthosBinding>>>({});
+  const [budget, setBudget] = useState<SynthosProfileInput["budget"]>(SYNTHOS_DEFAULT_BUDGET);
   const [checks, setChecks] = useState("");
+  const bindings = Object.values(roles).filter(
+    (binding): binding is SynthosBinding => binding !== undefined,
+  );
+  const checkCommands = checks
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const requiredRoles = ["architect", "crew", "lead", "reviewer"] as const;
+  const crewReady =
+    requiredRoles.every((role) => roles[role] !== undefined) &&
+    bindings.every((binding) =>
+      choices.some(
+        (choice) =>
+          choice.selection.instanceId === binding.modelSelection.instanceId &&
+          choice.selection.model === binding.modelSelection.model,
+      ),
+    );
+  function assign(role: SynthosRole, key: string) {
+    const choice = choices.find((item) => item.key === key);
+    setRoles((current) => {
+      const next = { ...current };
+      if (choice)
+        next[role] = {
+          role,
+          modelSelection: choice.selection,
+          inputTokenLimit: current[role]?.inputTokenLimit ?? 24000,
+          outputTokenLimit: current[role]?.outputTokenLimit ?? 8000,
+        };
+      else delete next[role];
+      return next;
+    });
+  }
+  function bindingEditor(role: SynthosRole) {
+    const binding = roles[role];
+    const key = binding
+      ? `${binding.modelSelection.instanceId}:${binding.modelSelection.model}`
+      : "";
+    return (
+      <div className="sx-crew-binding" key={role}>
+        <label className="sx-field">
+          {roleLabels[role]}
+          <select value={key} onChange={(event) => assign(role, event.target.value)}>
+            <option value="">
+              {requiredRoles.some((item) => item === role)
+                ? "Choose an available model"
+                : "Unassigned"}
+            </option>
+            {binding && !choices.some((choice) => choice.key === key) && (
+              <option value={key}>
+                Unavailable: {binding.modelSelection.model} / {binding.modelSelection.instanceId}
+              </option>
+            )}
+            {choices.map((choice) => (
+              <option key={choice.key} value={choice.key}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {binding && (
+          <div className="sx-role-reservations">
+            <label className="sx-field">
+              Input tokens
+              <input
+                aria-label={`${roleLabels[role]} input token reservation`}
+                type="number"
+                min={1}
+                max={125000}
+                step={1}
+                value={binding.inputTokenLimit}
+                onChange={(event) =>
+                  setRoles((current) => ({
+                    ...current,
+                    [role]: { ...binding, inputTokenLimit: Number(event.target.value) },
+                  }))
+                }
+              />
+            </label>
+            <label className="sx-field">
+              Output tokens
+              <input
+                aria-label={`${roleLabels[role]} output token reservation`}
+                type="number"
+                min={1}
+                max={64000}
+                step={1}
+                value={binding.outputTokenLimit}
+                onChange={(event) =>
+                  setRoles((current) => ({
+                    ...current,
+                    [role]: { ...binding, outputTokenLimit: Number(event.target.value) },
+                  }))
+                }
+              />
+            </label>
+          </div>
+        )}
+        {binding?.modelSelection.options && (
+          <small className="sx-muted">
+            Saved provider options are preserved until you choose another model.
+          </small>
+        )}
+      </div>
+    );
+  }
   const proposalIdentity = useRef<{
     signature: string;
     workflowId: string;
@@ -649,27 +800,15 @@ function MissionComposer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function create() {
-    if (!environmentId || !project || !task.trim()) return;
+    if (!environmentId || !project || !task.trim() || !crewReady) return;
     setBusy(true);
     setError(null);
-    const bindings: SynthosBinding[] = Object.entries(models).flatMap(([role, key]) => {
-      const choice = choices.find((item) => item.key === key);
-      return choice
-        ? [
-            {
-              role: role as SynthosRole,
-              modelSelection: choice.selection,
-              inputTokenLimit: 24000,
-              outputTokenLimit: 8000,
-            },
-          ]
-        : [];
-    });
     const signature = JSON.stringify({
       projectId: project.id,
       task: task.trim(),
       bindings,
       checks,
+      budget,
     });
     const identity =
       proposalIdentity.current?.signature === signature
@@ -686,10 +825,8 @@ function MissionComposer({
           title: task.trim().split("\n")[0]!.slice(0, 100),
           task: task.trim(),
           bindings,
-          checkCommands: checks
-            .split("\n")
-            .map((line) => line.trim())
-            .filter(Boolean),
+          checkCommands,
+          budget,
         },
       });
       onCreated(identity.workflowId);
@@ -739,30 +876,24 @@ function MissionComposer({
             required
           />
         </label>
+        <SynthosCrewProfiles
+          environmentId={environmentId}
+          connected={connected}
+          draft={{ bindings, budget, checkCommands }}
+          draftReady={crewReady}
+          onApply={(profile) => {
+            setRoles(
+              Object.fromEntries(profile.bindings.map((binding) => [binding.role, binding])),
+            );
+            setBudget(profile.budget);
+            setChecks(profile.checkCommands.join("\n"));
+          }}
+        />
         <details className="sx-bindings" open>
           <summary>
-            Crew assignments <span>{Object.values(models).filter(Boolean).length} bound</span>
+            Crew assignments <span>{bindings.length} bound</span>
           </summary>
-          <div className="sx-binding-grid">
-            {(["architect", "crew", "lead", "reviewer"] as const).map((role) => (
-              <label className="sx-field" key={role}>
-                {roleLabels[role]}
-                <select
-                  value={models[role] ?? ""}
-                  onChange={(event) =>
-                    setModels((current) => ({ ...current, [role]: event.target.value }))
-                  }
-                >
-                  <option value="">Choose an available model</option>
-                  {choices.map((choice) => (
-                    <option key={choice.key} value={choice.key}>
-                      {choice.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
+          <div className="sx-binding-grid">{requiredRoles.map(bindingEditor)}</div>
           <p className="sx-muted">
             Lead verification requires numeric command exit receipts from its provider. An adapter
             that cannot report them holds at the evidence gate. Choose the actual qualified model
@@ -771,24 +902,7 @@ function MissionComposer({
           <details className="sx-optional-bindings">
             <summary>Scouts + advisory roles</summary>
             <div className="sx-binding-grid">
-              {(["search", "grep", "docs", "pm", "router", "advisor"] as const).map((role) => (
-                <label className="sx-field" key={role}>
-                  {roleLabels[role]}
-                  <select
-                    value={models[role] ?? ""}
-                    onChange={(event) =>
-                      setModels((current) => ({ ...current, [role]: event.target.value }))
-                    }
-                  >
-                    <option value="">Unassigned</option>
-                    {choices.map((choice) => (
-                      <option key={choice.key} value={choice.key}>
-                        {choice.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))}
+              {(["search", "grep", "docs", "pm", "router", "advisor"] as const).map(bindingEditor)}
             </div>
             <p className="sx-muted">
               Bound scouts and routing roles run during planning. The advisor is available at the
@@ -802,6 +916,47 @@ function MissionComposer({
             </p>
           )}
         </details>
+        <details className="sx-bindings sx-budget-editor">
+          <summary>
+            Workflow budget <span>{budget.maxTokens.toLocaleString()} tokens reserved at most</span>
+          </summary>
+          <div className="sx-binding-grid">
+            {(
+              [
+                ["durationMs", "Deadline (seconds)", 1800, 0.001],
+                ["maxLoops", "Review loops", 5, 1],
+                ["maxBuilds", "Build attempts", 3, 1],
+                ["maxAdvisorCalls", "Advisor calls", 3, 0],
+                ["maxAdvisorTokens", "Advisor input tokens", 125000, 0],
+                ["maxTokens", "Total token budget", undefined, 1],
+              ] as const
+            ).map(([field, label, max, min]) => (
+              <label className="sx-field" key={field}>
+                {label}
+                <input
+                  type="number"
+                  min={min}
+                  max={max}
+                  step={field === "durationMs" ? 0.001 : 1}
+                  value={field === "durationMs" ? budget[field] / 1000 : budget[field]}
+                  onChange={(event) =>
+                    setBudget((current) => ({
+                      ...current,
+                      [field]:
+                        field === "durationMs"
+                          ? Math.round(Number(event.target.value) * 1000)
+                          : Number(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <p className="sx-muted">
+            These admission limits bound new dispatches. They are not a provider-side hard spending
+            cap.
+          </p>
+        </details>
         <label className="sx-field">
           Verification commands <span>One command per line</span>
           <textarea
@@ -812,11 +967,15 @@ function MissionComposer({
           />
         </label>
         <div className="sx-submit-line">
-          <p>Creates a proposal. Starting the workflow is a separate action.</p>
+          <p>
+            {crewReady
+              ? "Creates a proposal. Starting the workflow is a separate action."
+              : "Bind all required roles to available host models before creating this proposal."}
+          </p>
           <button
             type="submit"
             className="sx-button sx-button-primary"
-            disabled={busy || !connected || !project || !task.trim()}
+            disabled={busy || !connected || !project || !task.trim() || !crewReady}
           >
             {busy ? "Saving…" : "Create mission"}
             <ArrowRight size={16} />

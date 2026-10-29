@@ -8,9 +8,11 @@ import {
   SynthosConnectionCommand,
   SynthosCreateInput,
   SynthosKnowledgeCommand,
+  SynthosProfileCommand,
   SynthosRequestError,
   synthosConnectionRequiredScope,
   synthosKnowledgeRequiredScope,
+  synthosProfileRequiredScope,
   TrimmedNonEmptyString,
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
@@ -33,6 +35,7 @@ import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as ServerConfig from "../config.ts";
 import { readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
+import { tokenMonitorCommand } from "./tokenMonitor.ts";
 
 const MAX_INPUT_BYTES = 128 * 1024;
 
@@ -76,6 +79,7 @@ export type SynthosCliRequest =
   | { readonly type: "create"; readonly input: SynthosCreateInput }
   | { readonly type: "connection"; readonly input: SynthosConnectionCommand }
   | { readonly type: "knowledge"; readonly input: SynthosKnowledgeCommand }
+  | { readonly type: "profile"; readonly input: SynthosProfileCommand }
   | { readonly type: "command"; readonly workflowId: string; readonly input: SynthosCommandInput };
 
 const isSynthosCliError = Schema.is(SynthosCliError);
@@ -167,6 +171,11 @@ export const requestSynthos = Effect.fn("cli.synthos.request")(
             headers,
             payload: request.input,
           } as Parameters<typeof client.synthosKnowledge.execute>[0]);
+        case "profile":
+          return yield* client.synthosProfiles.execute({
+            headers,
+            payload: request.input,
+          } as Parameters<typeof client.synthosProfiles.execute>[0]);
         case "command":
           return yield* client.synthos.commandWorkflow({
             headers,
@@ -178,15 +187,17 @@ export const requestSynthos = Effect.fn("cli.synthos.request")(
     if (bearerToken !== undefined) return yield* send(bearerToken);
     const auth = yield* EnvironmentAuth.EnvironmentAuth;
     const scopes: ReadonlyArray<AuthEnvironmentScope> =
-      request.type === "knowledge"
-        ? [synthosKnowledgeRequiredScope(request.input)]
-        : request.type === "connection"
-          ? [synthosConnectionRequiredScope(request.input)]
-          : request.type === "list" || request.type === "get" || request.type === "policy"
-            ? [AuthOrchestrationReadScope]
-            : request.type === "command" && request.input.action === "approve"
-              ? [AuthOrchestrationOperateScope, AuthSourceControlWriteScope]
-              : [AuthOrchestrationOperateScope];
+      request.type === "profile"
+        ? [synthosProfileRequiredScope(request.input)]
+        : request.type === "knowledge"
+          ? [synthosKnowledgeRequiredScope(request.input)]
+          : request.type === "connection"
+            ? [synthosConnectionRequiredScope(request.input)]
+            : request.type === "list" || request.type === "get" || request.type === "policy"
+              ? [AuthOrchestrationReadScope]
+              : request.type === "command" && request.input.action === "approve"
+                ? [AuthOrchestrationOperateScope, AuthSourceControlWriteScope]
+                : [AuthOrchestrationOperateScope];
     return yield* Effect.acquireUseRelease(
       auth.issueSession({ scopes, label: "gch synthos cli", ttl: Duration.minutes(1) }),
       (issued) => send(issued.token),
@@ -237,7 +248,7 @@ const workflowArgument = Argument.String("workflow").pipe(
 );
 const fileArgument = Argument.String("file").pipe(
   Argument.withDescription(
-    "JSON request file, at most 128 KiB. Mutation commandId must be unique; retain it for retries.",
+    "JSON request file, at most 128 KiB. Use the schema for the selected command.",
   ),
 );
 
@@ -246,6 +257,18 @@ export const synthosCommand = Command.make("synthos").pipe(
     "Control saved SynthOS workflows on the running server. Prints JSON. GCH_AUTH_TOKEN reuses an existing session for idempotent retries.",
   ),
   Command.withSubcommands([
+    tokenMonitorCommand,
+    Command.make("profile", { ...projectLocationFlags, file: fileArgument }).pipe(
+      Command.withDescription(
+        "Read or save a crew profile with SynthosProfileCommand JSON: list, get, upsert, delete or restore. Does not start provider work.",
+      ),
+      Command.withHandler((flags) =>
+        Effect.gen(function* () {
+          const input = yield* readSynthosInput(flags.file, SynthosProfileCommand);
+          yield* runOnServer(flags, { type: "profile", input });
+        }).pipe(reportErrors),
+      ),
+    ),
     Command.make("policy", { ...projectLocationFlags }).pipe(
       Command.withDescription("Inspect the current host's GCH policy, source lineage, and limits."),
       Command.withHandler((flags) => runOnServer(flags, { type: "policy" }).pipe(reportErrors)),

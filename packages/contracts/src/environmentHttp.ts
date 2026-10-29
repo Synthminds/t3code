@@ -66,6 +66,7 @@ import {
   SynthosPolicy,
 } from "./synthos.ts";
 import { SynthosKnowledgeCommand, SynthosKnowledgeResult } from "./synthosKnowledge.ts";
+import { SynthosProfileCommand, SynthosProfileResult } from "./synthosProfiles.ts";
 import {
   PullRequestDiffInput,
   PullRequestDiffResult,
@@ -901,6 +902,15 @@ class EnvironmentSynthosConnectionsHttpApi extends HttpApiGroup.make("synthosCon
   }).middleware(EnvironmentAuthenticatedAuth),
 ) {}
 
+class EnvironmentSynthosProfilesHttpApi extends HttpApiGroup.make("synthosProfiles").add(
+  HttpApiEndpoint.post("execute", "/api/synthos/profiles", {
+    headers: OptionalBearerHeaders,
+    payload: SynthosProfileCommand,
+    success: SynthosProfileResult,
+    error: [SynthosRequestError, EnvironmentScopeRequiredError, EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 class EnvironmentSynthosKnowledgeHttpApi extends HttpApiGroup.make("synthosKnowledge").add(
   HttpApiEndpoint.post("execute", "/api/synthos/knowledge", {
     headers: OptionalBearerHeaders,
@@ -912,6 +922,7 @@ class EnvironmentSynthosKnowledgeHttpApi extends HttpApiGroup.make("synthosKnowl
 
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentSynthosKnowledgeHttpApi)
+  .add(EnvironmentSynthosProfilesHttpApi)
   .add(EnvironmentSynthosConnectionsHttpApi)
   .add(EnvironmentSynthosHttpApi)
   .add(EnvironmentMetadataHttpApi)

@@ -47,6 +47,26 @@ The lead car and three motorcycles represent persistent roles. An assigned role 
 
 Approval creates a publication package bound to its evidence and candidate checkpoint. It does not itself establish a live publisher or claim that a remote branch, pull request, or deployment was published. Token usage that cannot be accounted for blocks progression rather than being treated as zero.
 
+### Reuse a crew and handle attention
+
+In the mission composer, save a named crew profile to reuse model bindings, model options, role token limits, verification commands, and workflow budgets. **Apply to draft** copies those settings into the current proposal; it does not start work or alter an existing mission. Profiles persist on the selected host and use version checks when updating. Reload a changed profile before replacing it. Removed profiles can be restored. A model saved in a profile can become unavailable; choose an available replacement before creating the proposal.
+
+**Needs you** collects decisions, blocked missions or failed checks, and pending T3 permissions or questions. It links to the existing review or thread controls. The panel states its coverage: the latest 20 workflows and the selected host's loaded threads. It is not an exhaustive historical queue, and moving between views does not approve work. Saved profiles describe persistent role settings, not continuously running provider sessions.
+
+### Reconcile usage
+
+Open **Workflow → Fuel telemetry · Token Monitor** for the selected mission's attempt ledger. Unknown counters and conflicting or incomplete identities remain visible. For Token Monitor, use **Settings → Collection → Data export** in that app, then import its `token-monitor-export.json` here. The file is processed locally in the browser and is not uploaded to the server. Imports are limited to 2 MiB.
+
+The comparison uses a provider's strong native session identity where one is available. Ambiguous matches, stale or partial coverage, and unaccounted subagents cannot establish an exact difference. Export periods are compared independently; they are not added together. Imported counters never replace the workflow's budget or verification evidence.
+
+The CLI can summarize the same export without a running server or account access:
+
+```sh
+gch synthos usage-import /path/to/token-monitor-export.json
+```
+
+Token Monitor's upstream headless collector can scan multiple provider logs and synchronize to a hub. This connection uses its explicit export; it does not start that collector or change account credentials.
+
 ## Inspect GCH integration
 
 Open the cockpit's **GCH** inspector or run `gch synthos policy` to inspect the server's policy source and integration limits. The read-only API is `GET /api/synthos/policy`, using an authenticated session with `orchestration:read`.
@@ -71,6 +91,8 @@ Set configuration on the host running the server, through its process environmen
 
 In **Knowledge**, select Obsidian or Mem. List or search notes, open the full Markdown, and save changes. Mem updates include the loaded note version; Obsidian updates include the loaded content hash. If the source changed, reload it before saving. Obsidian access stays inside the configured vault and accepts Markdown files; symlink escapes are rejected.
 
+To preserve a mission decision or lesson, open **Decisions → Memory cassette** with a complete mission loaded. Draft the note, inspect its exact preview, confirm review, and save. The note includes dated workflow, policy, candidate, and source-thread references. A workflow change invalidates the capture's source snapshot; refresh it before saving. Raw transcripts are not automatically exported. Existing-note conflicts retain the draft. The [Claude–Obsidian setup guide](../operations/synthos-memory.md) connects the user's second-brain fork to the same vault for capture and recall.
+
 In **Tools + mail**, the original 41-entry CLI supply catalog is searchable by capability and category. Its host inventory checks whether executables can be found, without running a probe or authenticating services. Open a cartridge to inspect its interface and availability. Copy its terminal handoff into the existing T3 workspace terminal; this handoff is untracked by the workflow and its Stop control. Installation does not light an activity indicator. A tool lights only when the host identifies its running child process in a T3 terminal; the deck refreshes while visible and clears activity on disconnect. Other terminal sessions remain untracked. The separate provider inventory reports provider installation, sign-in, and model availability. For AgentMail, enter the sender inbox ID, recipients, subject, and body, then select **Prepare exact preview**. Inspect the complete envelope before **Send approved message**. Delivery receipts distinguish prepared, pending, sent, and unknown outcomes. An unknown outcome must be reconciled before preparing a replacement; it is not proof of failure.
 
 ## Device review inbox
@@ -93,7 +115,10 @@ gch synthos create mission.json
 gch synthos command mission-1 command.json
 gch synthos connection connection.json
 gch synthos knowledge knowledge.json
+gch synthos profile profile.json
 ```
+
+`profile` reads or changes the selected host's saved crew templates. For example, `profile.json` can contain `{ "type": "list", "includeDeleted": true }` or `{ "type": "get", "id": "YOUR_PROFILE_ID" }`. Writes use `upsert` with the editable profile and `expectedVersion` (`null` when creating), or `delete` / `restore` with the ID and current version. Reads require `orchestration:read`; changes require `orchestration:operate`. Profiles persist across CLI sessions. These operations do not dispatch agent work.
 
 `create` saves a proposal only. Put a real project ID and provider/model IDs from the host's inventory into `mission.json`, for example:
 
