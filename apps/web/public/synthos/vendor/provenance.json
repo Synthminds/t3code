@@ -1,0 +1,7 @@
+{
+  "package": "three",
+  "version": "0.186.1",
+  "source": "https://registry.npmjs.org/three/-/three-0.186.1.tgz",
+  "license": "MIT",
+  "changes": "GLTFLoader and BufferGeometryUtils import specifiers rewritten to local relative modules."
+}

@@ -7,3 +7,6 @@
 packages/source-control-github/schema/** linguist-generated
 apps/server/schema/** linguist-generated
 **/*.graphql.ts linguist-generated
+# Preserve the audited upstream bytes of bundled third-party code and licenses.
+apps/web/public/synthos/vendor/** linguist-vendored -whitespace
+apps/web/public/synthos/fonts/*-OFL.txt linguist-vendored -whitespace

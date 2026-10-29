@@ -59,12 +59,21 @@ describe("resolveStartupRecoveryOffer", () => {
     ).toEqual({ _tag: "Reinstall", version: "0.1.2" });
   });
 
-  it("falls back to the releases page when this version never started", () => {
+  it("offers manual source recovery without an available local update", () => {
     expect(resolveStartupRecoveryOffer(updateState({ status: "disabled" }), "0.1.3")).toEqual({
-      _tag: "Releases",
+      _tag: "Manual",
     });
     expect(resolveStartupRecoveryOffer(updateState({ status: "up-to-date" }), null)).toEqual({
-      _tag: "Releases",
+      _tag: "Manual",
     });
+  });
+
+  it("ignores retained downloads and previous versions when updates are disabled", () => {
+    expect(
+      resolveStartupRecoveryOffer(
+        updateState({ enabled: false, status: "downloaded", downloadedVersion: "0.1.4" }),
+        "0.1.2",
+      ),
+    ).toEqual({ _tag: "Manual" });
   });
 });

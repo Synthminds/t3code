@@ -1,0 +1,22 @@
+[Unit]
+Description=SynthOS server from a local source checkout
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=@CHECKOUT@
+Environment=@HOME@
+Environment=@PORT@
+Environment=@PATH@
+ExecStart=@NODE@ @HELPER@ --run
+KillMode=mixed
+TimeoutStopSec=90
+Restart=on-failure
+RestartSec=5
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

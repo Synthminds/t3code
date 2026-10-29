@@ -10,6 +10,8 @@ packages:
 # true = allowed to run build scripts; false mirrors the pnpm 10 behavior
 # where anything outside onlyBuiltDependencies was silently not built.
 allowBuilds:
+  # Eval SDK works without the optional native CLI download fallback.
+  braintrust: false
   browser-tabs-lock: false
   bufferutil: false
   core-js: false

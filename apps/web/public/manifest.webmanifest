@@ -1,22 +1,18 @@
 {
   "id": "/",
-  "name": "T3 Code",
-  "short_name": "T3 Code",
-  "start_url": "/",
+  "name": "SynthOS Night Riders",
+  "short_name": "SynthOS",
+  "start_url": "/synthos",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#161616",
-  "theme_color": "#161616",
+  "background_color": "#080e20",
+  "theme_color": "#0d172d",
   "icons": [
     {
-      "src": "/favicon-32x32.png",
-      "sizes": "32x32",
-      "type": "image/png"
-    },
-    {
-      "src": "/apple-touch-icon.png",
-      "sizes": "180x180",
-      "type": "image/png"
+      "src": "/synthos/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ]
 }

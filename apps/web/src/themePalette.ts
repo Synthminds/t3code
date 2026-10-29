@@ -7,7 +7,7 @@ import { Atom } from "effect/reactivity";
 import "culori/css";
 import { converter, parse } from "culori/fn";
 import {
-  BUILT_IN_THEMES,
+  WEB_BUILT_IN_THEMES as BUILT_IN_THEMES,
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,

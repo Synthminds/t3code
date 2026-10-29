@@ -1,5 +1,7 @@
 # Devices
 
+For Harness, Fieldy, and Even Realities G2 capture review, see [SynthOS device intake](./synthos.md#device-review-inbox). This page covers the existing simulator and emulator panel.
+
 The Device panel shows a live iOS Simulator or Android Emulator next to a
 thread, so you can watch an agent verify mobile work and tap the device
 yourself. Agents get the same device through `device_*` tools and the
