@@ -68,3 +68,11 @@ export * from "./rpc.ts";
 export * from "./worktreeSetup.ts";
 export * from "./secretRequest.ts";
 export * from "./clientRpcPermissions.ts";
+export * from "./synthos.ts";
+export * from "./synthosConnections.ts";
+export * from "./synthosKnowledge.ts";
+export * from "./synthosProfiles.ts";
+
+export * from "./synthosContext.ts";
+
+export * from "./synthosGraph.ts";

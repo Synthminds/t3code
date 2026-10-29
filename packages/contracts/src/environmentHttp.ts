@@ -1,3 +1,6 @@
+import { SynthosGraphCommand, SynthosGraphResult } from "./synthosGraph.ts";
+import { SynthosContextCommand, SynthosContextResult } from "./synthosContext.ts";
+import { SynthosConnectionCommand, SynthosConnectionResult } from "./synthosConnections.ts";
 import * as Context from "effect/Context";
 import type * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
@@ -56,6 +59,16 @@ import {
   OrchestrationV2ThreadTranscript,
 } from "./orchestrationV2.ts";
 import { Project, ProjectMutation, ProjectSnapshot } from "./project.ts";
+import {
+  SynthosWorkflow,
+  SynthosEvent,
+  SynthosCreateInput,
+  SynthosCommandInput,
+  SynthosRequestError,
+  SynthosPolicy,
+} from "./synthos.ts";
+import { SynthosKnowledgeCommand, SynthosKnowledgeResult } from "./synthosKnowledge.ts";
+import { SynthosProfileCommand, SynthosProfileResult } from "./synthosProfiles.ts";
 import {
   PullRequestDiffInput,
   PullRequestDiffResult,
@@ -835,7 +848,105 @@ class EnvironmentWebhooksHttpApi extends HttpApiGroup.make("webhooks")
   .add(HttpApiEndpoint.patch("webhookPatch", WEBHOOK_PATH, webhookEndpoint))
   .add(HttpApiEndpoint.get("webhookGet", WEBHOOK_PATH, webhookEndpoint)) {}
 
+const SynthosWorkflowParams = Schema.Struct({ workflowId: TrimmedNonEmptyString });
+const SynthosHttpErrors = [
+  SynthosRequestError,
+  EnvironmentScopeRequiredError,
+  EnvironmentInternalError,
+] as const;
+class EnvironmentSynthosHttpApi extends HttpApiGroup.make("synthos")
+  .add(
+    HttpApiEndpoint.get("getPolicy", "/api/synthos/policy", {
+      headers: OptionalBearerHeaders,
+      success: SynthosPolicy,
+      error: SynthosHttpErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.get("listWorkflows", "/api/synthos/workflows", {
+      headers: OptionalBearerHeaders,
+      success: Schema.Struct({ workflows: Schema.Array(SynthosWorkflow) }),
+      error: SynthosHttpErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.get("getWorkflow", "/api/synthos/workflows/:workflowId", {
+      headers: OptionalBearerHeaders,
+      params: SynthosWorkflowParams,
+      success: Schema.Struct({ workflow: SynthosWorkflow, events: Schema.Array(SynthosEvent) }),
+      error: SynthosHttpErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("createWorkflow", "/api/synthos/workflows", {
+      headers: OptionalBearerHeaders,
+      payload: SynthosCreateInput,
+      success: SynthosWorkflow,
+      error: SynthosHttpErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("commandWorkflow", "/api/synthos/workflows/:workflowId/commands", {
+      headers: OptionalBearerHeaders,
+      params: SynthosWorkflowParams,
+      payload: SynthosCommandInput,
+      success: SynthosWorkflow,
+      error: SynthosHttpErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
+class EnvironmentSynthosConnectionsHttpApi extends HttpApiGroup.make("synthosConnections").add(
+  HttpApiEndpoint.post("execute", "/api/synthos/connections", {
+    headers: OptionalBearerHeaders,
+    payload: SynthosConnectionCommand,
+    success: SynthosConnectionResult,
+    error: [SynthosRequestError, EnvironmentScopeRequiredError, EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
+class EnvironmentSynthosGraphHttpApi extends HttpApiGroup.make("synthosGraph").add(
+  HttpApiEndpoint.post("execute", "/api/synthos/graph", {
+    headers: OptionalBearerHeaders,
+    payload: SynthosGraphCommand,
+    success: SynthosGraphResult,
+    error: [SynthosRequestError, EnvironmentScopeRequiredError, EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
+class EnvironmentSynthosContextHttpApi extends HttpApiGroup.make("synthosContext").add(
+  HttpApiEndpoint.post("execute", "/api/synthos/context", {
+    headers: OptionalBearerHeaders,
+    payload: SynthosContextCommand,
+    success: SynthosContextResult,
+    error: [SynthosRequestError, EnvironmentScopeRequiredError, EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
+class EnvironmentSynthosProfilesHttpApi extends HttpApiGroup.make("synthosProfiles").add(
+  HttpApiEndpoint.post("execute", "/api/synthos/profiles", {
+    headers: OptionalBearerHeaders,
+    payload: SynthosProfileCommand,
+    success: SynthosProfileResult,
+    error: [SynthosRequestError, EnvironmentScopeRequiredError, EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
+class EnvironmentSynthosKnowledgeHttpApi extends HttpApiGroup.make("synthosKnowledge").add(
+  HttpApiEndpoint.post("execute", "/api/synthos/knowledge", {
+    headers: OptionalBearerHeaders,
+    payload: SynthosKnowledgeCommand,
+    success: SynthosKnowledgeResult,
+    error: [SynthosRequestError, EnvironmentScopeRequiredError, EnvironmentInternalError],
+  }).middleware(EnvironmentAuthenticatedAuth),
+) {}
+
 export class EnvironmentHttpApi extends HttpApi.make("environment")
+  .add(EnvironmentSynthosKnowledgeHttpApi)
+  .add(EnvironmentSynthosProfilesHttpApi)
+  .add(EnvironmentSynthosContextHttpApi)
+  .add(EnvironmentSynthosGraphHttpApi)
+  .add(EnvironmentSynthosConnectionsHttpApi)
+  .add(EnvironmentSynthosHttpApi)
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
   .add(EnvironmentMcpOAuthHttpApi)

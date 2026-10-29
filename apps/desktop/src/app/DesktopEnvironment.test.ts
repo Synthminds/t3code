@@ -68,8 +68,10 @@ describe("DesktopEnvironment", () => {
       );
       const production = yield* makeEnvironment();
 
-      assert.equal(development.stateDir, "/Users/alice/.t3/dev");
-      assert.equal(production.stateDir, "/Users/alice/.t3/userdata");
+      assert.equal(development.stateDir, "/Users/alice/.synthos/dev");
+      assert.equal(production.stateDir, "/Users/alice/.synthos/userdata");
+      assert.equal(production.appUserModelId, "com.synthminds.synthos");
+      assert.equal(production.linuxDesktopEntryName, "com.synthminds.SynthOS.desktop");
     }),
   );
 });

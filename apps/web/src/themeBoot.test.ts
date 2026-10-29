@@ -19,6 +19,8 @@ import {
 } from "./themePalette";
 
 const THEME_STORAGE_KEY = "t3code:theme";
+import { MIDNIGHT_PROTOCOL_THEME } from "@t3tools/shared/themePalettes";
+
 const DEFAULT_DARK_CHROME = getDefaultThemeColors("dark").chrome;
 
 const bootScript = (() => {
@@ -110,7 +112,7 @@ function runtimeResolvedAppearance(
   invalidateCustomThemes();
   try {
     const raw = storage[THEME_STORAGE_KEY] ?? null;
-    const theme = raw !== null && isKnownThemePreference(raw) ? raw : "system";
+    const theme = raw === null ? "midnight-protocol" : isKnownThemePreference(raw) ? raw : "system";
     const followRaw = storage[THEME_FOLLOW_SYSTEM_STORAGE_KEY] ?? null;
     const appearanceRaw = storage[THEME_APPEARANCE_MODE_STORAGE_KEY] ?? null;
     const appearanceMode =
@@ -281,6 +283,16 @@ describe("index.html boot script", () => {
     expect(boot.bootVariables["--boot-accent"]).toBe(colors.accent);
     expect(boot.backgroundColor).toBe(colors.chrome);
     expect(boot.metaContent).toBe(colors.chrome);
+  });
+
+  it("starts new clients in Midnight Protocol while retaining saved appearance choices", () => {
+    const fresh = runBootScript({ prefersDark: false });
+    expect(fresh.isDark).toBe(true);
+    expect(fresh.themeId).toBe(MIDNIGHT_PROTOCOL_THEME.id);
+    expect(fresh.backgroundColor).toBe(MIDNIGHT_PROTOCOL_THEME.colors.chrome);
+    expect(fresh.bootVariables["--boot-accent"]).toBe(MIDNIGHT_PROTOCOL_THEME.colors.accent);
+    const saved = runBootScript({ storage: { [THEME_STORAGE_KEY]: "light" }, prefersDark: true });
+    expect(saved.isDark).toBe(false);
   });
 
   it("keeps every built-in boot splash in sync with the real palettes", () => {

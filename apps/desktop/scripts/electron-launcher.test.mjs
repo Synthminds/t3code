@@ -4,6 +4,7 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeVM from "node:vm";
+import * as NodeURL from "node:url";
 
 import { assert, describe, it } from "vite-plus/test";
 
@@ -33,6 +34,8 @@ describe("electron development launcher", () => {
       "if [ -z \"${T3CODE_OTLP_PROTOCOL:-}\" ]; then export T3CODE_OTLP_PROTOCOL='http/protobuf'; fi",
     );
     assert.notInclude(environmentScript, "\nexport VITE_DEV_SERVER_URL=");
+    assert.include(environmentScript, "com.synthminds.synthos");
+    assert.notInclude(environmentScript, "com.t3tools.t3code");
   });
 
   it("keeps the launcher script free of volatile environment values", () => {
@@ -76,18 +79,18 @@ describe("electron development launcher", () => {
 
   it("keeps the native Electron executable name inside the branded macOS bundle", () => {
     const paths = resolveMacLauncherPaths(
-      "/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app",
-      "T3 Code (Dev)",
+      "/repo/apps/desktop/.electron-runtime/SynthOS (Dev).app",
+      "SynthOS (Dev)",
     );
 
-    assert.equal(paths.launcherExecutableName, "T3 Code (Dev) Launcher");
+    assert.equal(paths.launcherExecutableName, "SynthOS (Dev) Launcher");
     assert.equal(
       paths.launcherBinaryPath,
-      "/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app/Contents/MacOS/T3 Code (Dev) Launcher",
+      "/repo/apps/desktop/.electron-runtime/SynthOS (Dev).app/Contents/MacOS/SynthOS (Dev) Launcher",
     );
     assert.equal(
       paths.runtimeElectronBinaryPath,
-      "/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app/Contents/MacOS/Electron",
+      "/repo/apps/desktop/.electron-runtime/SynthOS (Dev).app/Contents/MacOS/Electron",
     );
 
     const script = makeDevelopmentLauncherScript({
@@ -98,9 +101,44 @@ describe("electron development launcher", () => {
     });
     assert.include(
       script,
-      "exec '/repo/apps/desktop/.electron-runtime/T3 Code (Dev).app/Contents/MacOS/Electron'",
+      "exec '/repo/apps/desktop/.electron-runtime/SynthOS (Dev).app/Contents/MacOS/Electron'",
     );
     assert.notInclude(script, "node_modules/electron");
+  });
+
+  it.each([
+    { development: true, name: "SynthOS (Dev)", scheme: "synthos-dev" },
+    { development: false, name: "SynthOS (Beta)", scheme: "synthos" },
+  ])("registers $name with an isolated macOS identity", ({ development, name, scheme }) => {
+    const source = NodeFS.readFileSync(new URL("./electron-launcher.mjs", import.meta.url), "utf8");
+    const plist = new Map();
+    NodeVM.runInNewContext(
+      `${source
+        .replace(/^import\s[\s\S]*?;\n/gm, "")
+        .replace(/^export /gm, "")
+        .replaceAll("import.meta.url", JSON.stringify(import.meta.url))}
+        patchMainBundleInfoPlist("/fixture/SynthOS.app", "/fixture/icon.icns", "Electron");`,
+      {
+        NodeChildProcess: {
+          spawnSync: (command, args) => {
+            assert.equal(command, "plutil");
+            plist.set(args[1], args[2] === "-json" ? JSON.parse(args[3]) : args[3]);
+            return { status: 0 };
+          },
+        },
+        NodeFS: { copyFileSync: () => undefined },
+        NodeOS: { platform: () => "darwin" },
+        NodePath,
+        NodeURL,
+        process: { env: development ? { VITE_DEV_SERVER_URL: "http://localhost:4317" } : {} },
+      },
+    );
+    assert.equal(plist.get("CFBundleDisplayName"), name);
+    assert.match(
+      plist.get("CFBundleIdentifier"),
+      /^com\.synthminds\.synthos(?:\.dev\.[a-z0-9]+)?$/,
+    );
+    assert.deepEqual(plist.get("CFBundleURLTypes")[0].CFBundleURLSchemes, [scheme]);
   });
 
   it("restores execute permissions on an unchanged launcher", () => {

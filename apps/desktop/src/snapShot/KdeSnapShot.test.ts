@@ -79,9 +79,14 @@ it("does not mistake installed files for KDE authorization, or fall back to a pi
 });
 
 it("detects a bundled update, updates explicitly, and removes only capture's registration", async () => {
-  await setup.perform("install-kde-helper");
-  const unrelated = NodePath.join(paths.dataHome, "applications", "another-app.desktop");
+  const unrelated = NodePath.join(
+    paths.dataHome,
+    "applications",
+    "com.t3tools.T3Code.KdeCapture.desktop",
+  );
+  await NodeFSP.mkdir(NodePath.dirname(unrelated), { recursive: true });
   await NodeFSP.writeFile(unrelated, "keep me");
+  await setup.perform("install-kde-helper");
   await NodeFSP.writeFile(paths.bundle, "updated helper");
   expect((await setup.state()).status).toBe("update-required");
   await setup.perform("install-kde-helper");

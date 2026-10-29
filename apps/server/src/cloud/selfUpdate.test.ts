@@ -6,7 +6,6 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Path from "effect/Path";
-import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -16,11 +15,13 @@ import * as ServerConfig from "../config.ts";
 import * as DesktopAppUpdate from "../desktopUpdate/DesktopAppUpdate.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServiceLauncherClient from "./serviceLauncherClient.ts";
+import { pinnedRuntimePaths, PINNED_RUNTIME_IDENTITY_FILE } from "./pinnedRuntime.ts";
 import { SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
 import * as ServerSelfUpdate from "./selfUpdate.ts";
 
 interface HarnessOptions {
   readonly mode?: "web" | "desktop";
+  readonly cachedRuntime?: boolean;
   readonly managed?: boolean;
   readonly preflight?: "ready" | "blocked";
   readonly beforeDownload?: Effect.Effect<void>;
@@ -55,6 +56,16 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
   const path = yield* Path.Path;
   const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-self-update-test-" });
   const order: string[] = [];
+  if (options.cachedRuntime !== false) {
+    const runtime = pinnedRuntimePaths(path, baseDir, "1.1.0", "linux");
+    yield* fs.makeDirectory(runtime.versionDir, { recursive: true });
+    yield* fs.writeFileString(runtime.entryPath, "SynthOS fixture");
+    yield* fs.writeFileString(runtime.sentinelPath, "1.1.0\n");
+    yield* fs.writeFileString(
+      path.join(runtime.versionDir, PINNED_RUNTIME_IDENTITY_FILE),
+      "1.1.0\n",
+    );
+  }
   const runner = ProcessRunner.ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
@@ -187,43 +198,12 @@ it.layer(NodeServices.layer)("server self update", (it) => {
     }),
   );
 
-  it.effect("keeps preparing after the progress stream closes", () =>
+  it.effect("refuses remote archive updates without downloading or handing off", () =>
     Effect.gen(function* () {
-      const releaseDownload = yield* Deferred.make<void>();
-      const sawDownloading = yield* Deferred.make<void>();
-      const accepted = yield* Deferred.make<void>();
-      const { selfUpdate, order } = yield* makeHarness({
-        beforeDownload: Deferred.await(releaseDownload),
-        requestUpdate: () =>
-          Effect.sync(() => {
-            order.push("accept");
-          }).pipe(Effect.andThen(Deferred.succeed(accepted, undefined)), Effect.as("launcher-id")),
-      });
-
-      const consumed = yield* ServerSelfUpdate.updateProgressStream(selfUpdate, {
-        targetVersion: "1.1.0",
-      }).pipe(
-        Stream.tap((event) =>
-          event.type === "progress" && event.stage === "downloading"
-            ? Deferred.succeed(sawDownloading, undefined)
-            : Effect.void,
-        ),
-        Stream.runDrain,
-        Effect.forkChild,
-      );
-
-      yield* Deferred.await(sawDownloading);
-      yield* Fiber.interrupt(consumed);
-      expect((yield* selfUpdate.update({ targetVersion: "1.2.0" }).pipe(Effect.flip)).reason).toBe(
-        "A server update is already in progress.",
-      );
-
-      yield* Deferred.succeed(releaseDownload, undefined);
-      yield* Deferred.await(accepted);
-      expect(order).toEqual(["download", "extract", "preflight", "accept"]);
-      expect((yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip)).reason).toBe(
-        "A server update is already in progress.",
-      );
+      const { selfUpdate, order } = yield* makeHarness({ cachedRuntime: false });
+      const error = yield* selfUpdate.update({ targetVersion: "1.1.0" }).pipe(Effect.flip);
+      expect(error.reason).toContain("SynthOS runtime downloads are disabled");
+      expect(order).toEqual([]);
     }),
   );
 });

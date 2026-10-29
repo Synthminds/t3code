@@ -311,7 +311,11 @@ function getAutoUpdateDisabledReason(args: {
   isDebPackage: boolean;
   disabledByEnv: boolean;
   hasUpdateFeedConfig: boolean;
+  mockUpdates: boolean;
 }): string | null {
+  if (!args.mockUpdates) {
+    return "Automatic updates are disabled for SynthOS. Install reviewed SynthOS releases manually.";
+  }
   if (!args.hasUpdateFeedConfig) {
     return "Automatic updates are not available because no update feed is configured.";
   }
@@ -420,6 +424,7 @@ export const make = Effect.gen(function* () {
         isDebPackage,
         disabledByEnv: config.disableAutoUpdate,
         hasUpdateFeedConfig: hasFeedConfig,
+        mockUpdates: config.mockUpdates,
       }),
     );
   });

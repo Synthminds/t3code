@@ -1,0 +1,32 @@
+{
+  "title": "Night Riders original vehicle assets",
+  "source": "Original procedural geometry authored for GCH; no third-party models, textures or fonts.",
+  "generator": "scripts/create-night-riders-assets.py",
+  "tool": "Blender 4.3.2",
+  "coordinates": {
+    "up": "+Y",
+    "forward": "+Z",
+    "groundY": 0,
+    "units": "meters"
+  },
+  "animation": {
+    "wheelAxis": "local X",
+    "carWheels": ["wheel-front-left", "wheel-front-right", "wheel-rear-left", "wheel-rear-right"],
+    "motorcycleWheels": ["wheel-front", "wheel-rear"],
+    "recolorMaterials": ["vehicle-accent", "vehicle-glow"]
+  },
+  "assets": [
+    {
+      "file": "car.glb",
+      "sha256": "e8a58c9961cff23cad2b96ac17e1b41596a94f0ced01e5494af928f595a4609f",
+      "bytes": 213340,
+      "meshObjects": 24
+    },
+    {
+      "file": "motorcycle.glb",
+      "sha256": "2513b817cde4184682f2af10d916b029b2e6ed459a595945706fe2d8d2b012c9",
+      "bytes": 161832,
+      "meshObjects": 15
+    }
+  ]
+}
