@@ -1,3 +1,4 @@
+import * as NativeToolProbes from "./NativeToolProbes.ts";
 import type {
   SynthosNativeTool,
   SynthosNativeToolInventory,
@@ -58,6 +59,7 @@ const make = Effect.gen(function* () {
   const environment = yield* HostProcess.Environment;
   const platform = yield* HostProcess.Platform;
   const architecture = yield* HostProcess.Architecture;
+  const probes = yield* Effect.serviceOption(NativeToolProbes.NativeToolProbes);
   const terminalManager = yield* Effect.serviceOption(TerminalManager.TerminalManager);
   const delimiter = platform === "win32" ? ";" : ":";
 
@@ -144,7 +146,18 @@ const make = Effect.gen(function* () {
                 : installed
                   ? "installed"
                   : "missing";
+            const probe = Option.isSome(probes)
+              ? yield* probes.value.describe(tool.id).pipe(
+                  Effect.orElseSucceed(() => ({
+                    supported: false,
+                    state: "unmeasured" as const,
+                    scope: "cli_version" as const,
+                    observation: null,
+                  })),
+                )
+              : undefined;
             return {
+              ...(probe ? { probe } : {}),
               id: tool.id,
               name: tool.name,
               description: tool.description,

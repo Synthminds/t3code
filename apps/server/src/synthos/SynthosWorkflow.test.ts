@@ -1,5 +1,8 @@
+import * as SynthosContext from "../synthos-context/SynthosContext.ts";
+import { sealManifest, verifyManifest } from "../synthos-context/manifest.ts";
 import { assert, describe, it } from "@effect/vitest";
 import {
+  SynthosContextError,
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
   CommandId,
@@ -33,13 +36,14 @@ const input: SynthosCreateInput = {
   bindings: (["architect", "crew", "lead", "reviewer", "advisor"] as const).map((role) => ({
     role,
     modelSelection: { instanceId: ProviderInstanceId.make("fixture"), model: "fixture" },
-    inputTokenLimit: 1000,
+    inputTokenLimit: 20000,
     outputTokenLimit: 1000,
   })),
   checkCommands: ["vp test run focused.test.ts"],
 };
 const makeRuntime = Effect.gen(function* () {
   const launches = yield* Ref.make<string[]>([]);
+  const contextChanged = yield* Ref.make(false);
   const stops = yield* Ref.make<string[]>([]);
   const observation = yield* Ref.make<SynthosRuntime.SynthosObservation>({
     status: "completed",
@@ -58,7 +62,18 @@ const makeRuntime = Effect.gen(function* () {
   const runtime = SynthosRuntime.SynthosRuntime.of({
     verifyCandidate: () => Ref.get(candidateValid),
     launch: (_workflow, attempt) =>
-      Ref.update(launches, (current) => [...current, attempt.commandId]),
+      Ref.get(contextChanged).pipe(
+        Effect.flatMap((changed) =>
+          changed
+            ? Effect.fail(
+                new SynthosRuntime.SynthosRuntimeError({
+                  operation: "launch",
+                  cause: new SynthosContextError({ reason: "source_changed" }),
+                }),
+              )
+            : Ref.update(launches, (current) => [...current, attempt.commandId]),
+        ),
+      ),
     observe: () => Ref.get(observation),
     interrupt: (_workflow, attempt) =>
       Ref.get(stopFails).pipe(
@@ -78,8 +93,38 @@ const makeRuntime = Effect.gen(function* () {
   });
   const layer = SynthosWorkflow.layer.pipe(
     Layer.provide(Layer.succeed(SynthosRuntime.SynthosRuntime, runtime)),
+    Layer.provide(
+      Layer.mock(SynthosContext.SynthosContext)({
+        build: ({ projectId, role, task }) =>
+          Effect.succeed(
+            sealManifest({
+              version: 1,
+              projectId,
+              role,
+              query: task,
+              settingsVersion: 0,
+              repositoryRevision: null,
+              routes: [],
+              sources: [],
+              omissions: [],
+              status: "ready",
+              neighborhoodUsed: false,
+            }),
+          ),
+        validate: () => Effect.void,
+      }),
+    ),
   );
-  return { launches, stops, observation, stopFails, stopSettled, candidateValid, layer };
+  return {
+    contextChanged,
+    launches,
+    stops,
+    observation,
+    stopFails,
+    stopSettled,
+    candidateValid,
+    layer,
+  };
 });
 const dispatch = Effect.fn("test.dispatch")(function* (
   workflow: Workflow,
@@ -102,6 +147,62 @@ const finishStages = Effect.fn("test.finishStages")(function* () {
 });
 
 describe("SynthOS workflow", () => {
+  it.effect("blocks independent review by the construction model family", () =>
+    Effect.gen(function* () {
+      yield* migration;
+      const test = yield* makeRuntime;
+      yield* Effect.gen(function* () {
+        const service = yield* SynthosWorkflow.SynthosWorkflow;
+        const created = yield* service.create(
+          {
+            ...input,
+            reviewMode: "independent",
+            bindings: input.bindings.map((binding) => ({
+              ...binding,
+              modelSelection: { ...binding.modelSelection, model: "gpt-6.1" },
+            })),
+          },
+          actor,
+        );
+        yield* dispatch(created, "start");
+        const result = yield* finishStages();
+        assert.equal(result.status, "blocked");
+        assert.equal(result.blockReason, "independent_reviewer_required");
+        assert.equal(result.attempts.filter((attempt) => attempt.role === "reviewer").length, 0);
+      }).pipe(Effect.provide(test.layer));
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
+  it.effect(
+    "releases an unlaunched attempt after source changes and freezes a new attempt on retry",
+    () =>
+      Effect.gen(function* () {
+        yield* migration;
+        const test = yield* makeRuntime;
+        yield* Ref.set(test.contextChanged, true);
+        yield* Effect.gen(function* () {
+          const service = yield* SynthosWorkflow.SynthosWorkflow;
+          const created = yield* service.create(input, actor);
+          yield* dispatch(created, "start");
+          yield* service.runDueWork;
+          yield* service.runDueWork;
+          const blocked = (yield* service.get(created.id)).workflow;
+          assert.equal(blocked.blockReason, "context_source_changed");
+          assert.equal(blocked.usage.reservedTokens, 0);
+          assert.isNull(blocked.activeAttemptId);
+          assert.equal(blocked.attempts[0]?.status, "failed");
+          assert.deepEqual(yield* Ref.get(test.launches), []);
+          yield* Ref.set(test.contextChanged, false);
+          yield* dispatch(blocked, "retry");
+          yield* service.runDueWork;
+          yield* service.runDueWork;
+          const retried = (yield* service.get(created.id)).workflow;
+          assert.equal(retried.attempts.length, 2);
+          assert.notEqual(retried.attempts[0]?.id, retried.attempts[1]?.id);
+          assert.equal((yield* Ref.get(test.launches)).length, 1);
+        }).pipe(Effect.provide(test.layer));
+      }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
   it.effect("runs configured discovery and PM roles in the same durable planning sequence", () =>
     Effect.gen(function* () {
       yield* migration;
@@ -130,6 +231,11 @@ describe("SynthOS workflow", () => {
         );
         assert.equal(workflow.status, "waiting_decision");
         assert.equal(workflow.usage.calls, 9);
+        for (const attempt of workflow.attempts) {
+          assert.isDefined(attempt.contextManifest);
+          assert.isTrue(verifyManifest(attempt.contextManifest!));
+          assert.include(attempt.packetHtml, attempt.contextManifest!.hash);
+        }
         assert.equal(workflow.usage.builds, 1);
         assert.equal(workflow.attempts[0]?.result, fullEvidence);
         assert.include(
@@ -138,6 +244,7 @@ describe("SynthOS workflow", () => {
         );
         const preview = (yield* service.list())[0]!;
         assert.equal(preview.detailOmitted, true);
+        assert.isUndefined(preview.attempts[0]?.contextManifest);
         assert.equal(preview.attempts[0]?.packetOmitted, true);
         assert.equal(preview.attempts[0]?.packetHtml, "");
         assert.include(preview.attempts[0]!.result, "Result preview");
@@ -347,7 +454,7 @@ describe("SynthOS workflow", () => {
         let current = (yield* service.get(input.workflowId)).workflow;
         assert.equal(current.usage.incompleteUsage, true);
         assert.equal(current.blockReason, "provider_usage_unavailable");
-        assert.equal(current.usage.reservedTokens, 2000);
+        assert.equal(current.usage.reservedTokens, 21000);
         assert.equal((yield* Ref.get(runtime.launches)).length, 1);
         yield* Ref.update(runtime.observation, (previous) => ({
           ...previous,

@@ -1,3 +1,4 @@
+import { SynthosGraphCommand, synthosGraphRequiredScope } from "@t3tools/contracts";
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -7,10 +8,12 @@ import {
   SynthosCommandInput,
   SynthosConnectionCommand,
   SynthosCreateInput,
+  SynthosContextCommand,
   SynthosKnowledgeCommand,
   SynthosProfileCommand,
   SynthosRequestError,
   synthosConnectionRequiredScope,
+  synthosContextRequiredScope,
   synthosKnowledgeRequiredScope,
   synthosProfileRequiredScope,
   TrimmedNonEmptyString,
@@ -80,6 +83,9 @@ export type SynthosCliRequest =
   | { readonly type: "connection"; readonly input: SynthosConnectionCommand }
   | { readonly type: "knowledge"; readonly input: SynthosKnowledgeCommand }
   | { readonly type: "profile"; readonly input: SynthosProfileCommand }
+  | { readonly type: "graph"; readonly input: SynthosGraphCommand }
+  | { readonly type: "context"; readonly input: SynthosContextCommand }
+  | { readonly type: "context_inspect"; readonly workflowId: string; readonly attemptId?: string }
   | { readonly type: "command"; readonly workflowId: string; readonly input: SynthosCommandInput };
 
 const isSynthosCliError = Schema.is(SynthosCliError);
@@ -171,6 +177,40 @@ export const requestSynthos = Effect.fn("cli.synthos.request")(
             headers,
             payload: request.input,
           } as Parameters<typeof client.synthosKnowledge.execute>[0]);
+        case "context_inspect": {
+          const { workflow } = yield* client.synthos.getWorkflow({
+            headers,
+            params: { workflowId: request.workflowId },
+          });
+          const attempts =
+            request.attemptId === undefined
+              ? workflow.attempts
+              : workflow.attempts.filter((attempt) => attempt.id === request.attemptId);
+          if (request.attemptId !== undefined && attempts.length === 0)
+            return yield* new SynthosCliError({
+              reason: "request_failed",
+              serverReason: "attempt_not_found",
+            });
+          return {
+            workflowId: workflow.id,
+            attempts: attempts.map((attempt) => ({
+              attemptId: attempt.id,
+              role: attempt.role,
+              status: attempt.contextManifest === undefined ? "unavailable" : "available",
+              manifest: attempt.contextManifest ?? null,
+            })),
+          };
+        }
+        case "graph":
+          return yield* client.synthosGraph.execute({
+            headers,
+            payload: request.input,
+          } as Parameters<typeof client.synthosGraph.execute>[0]);
+        case "context":
+          return yield* client.synthosContext.execute({
+            headers,
+            payload: request.input,
+          } as Parameters<typeof client.synthosContext.execute>[0]);
         case "profile":
           return yield* client.synthosProfiles.execute({
             headers,
@@ -187,17 +227,24 @@ export const requestSynthos = Effect.fn("cli.synthos.request")(
     if (bearerToken !== undefined) return yield* send(bearerToken);
     const auth = yield* EnvironmentAuth.EnvironmentAuth;
     const scopes: ReadonlyArray<AuthEnvironmentScope> =
-      request.type === "profile"
-        ? [synthosProfileRequiredScope(request.input)]
-        : request.type === "knowledge"
-          ? [synthosKnowledgeRequiredScope(request.input)]
-          : request.type === "connection"
-            ? [synthosConnectionRequiredScope(request.input)]
-            : request.type === "list" || request.type === "get" || request.type === "policy"
-              ? [AuthOrchestrationReadScope]
-              : request.type === "command" && request.input.action === "approve"
-                ? [AuthOrchestrationOperateScope, AuthSourceControlWriteScope]
-                : [AuthOrchestrationOperateScope];
+      request.type === "graph"
+        ? [synthosGraphRequiredScope(request.input)]
+        : request.type === "context"
+          ? [synthosContextRequiredScope(request.input)]
+          : request.type === "profile"
+            ? [synthosProfileRequiredScope(request.input)]
+            : request.type === "knowledge"
+              ? [synthosKnowledgeRequiredScope(request.input)]
+              : request.type === "connection"
+                ? [synthosConnectionRequiredScope(request.input)]
+                : request.type === "list" ||
+                    request.type === "get" ||
+                    request.type === "policy" ||
+                    request.type === "context_inspect"
+                  ? [AuthOrchestrationReadScope]
+                  : request.type === "command" && request.input.action === "approve"
+                    ? [AuthOrchestrationOperateScope, AuthSourceControlWriteScope]
+                    : [AuthOrchestrationOperateScope];
     return yield* Effect.acquireUseRelease(
       auth.issueSession({ scopes, label: "gch synthos cli", ttl: Duration.minutes(1) }),
       (issued) => send(issued.token),
@@ -252,12 +299,48 @@ const fileArgument = Argument.String("file").pipe(
   ),
 );
 
+const contextInput = Schema.Union([
+  SynthosContextCommand,
+  Schema.Struct({
+    type: Schema.Literal("inspect"),
+    workflowId: TrimmedNonEmptyString,
+    attemptId: Schema.optionalKey(TrimmedNonEmptyString),
+  }),
+]);
+
 export const synthosCommand = Command.make("synthos").pipe(
   Command.withDescription(
     "Control saved SynthOS workflows on the running server. Prints JSON. GCH_AUTH_TOKEN reuses an existing session for idempotent retries.",
   ),
   Command.withSubcommands([
     tokenMonitorCommand,
+    Command.make("graph", { ...projectLocationFlags, file: fileArgument }).pipe(
+      Command.withDescription(
+        "Explore, refresh, configure and select project graph evidence using SynthosGraphCommand JSON.",
+      ),
+      Command.withHandler((flags) =>
+        Effect.gen(function* () {
+          const input = yield* readSynthosInput(flags.file, SynthosGraphCommand);
+          yield* runOnServer(flags, { type: "graph", input });
+        }).pipe(reportErrors),
+      ),
+    ),
+    Command.make("context", { ...projectLocationFlags, file: fileArgument }).pipe(
+      Command.withDescription(
+        "Inspect context settings and frozen manifests, update future recall scope, or preview context with SynthosContextCommand JSON. Does not start provider work.",
+      ),
+      Command.withHandler((flags) =>
+        Effect.gen(function* () {
+          const input = yield* readSynthosInput(flags.file, contextInput);
+          yield* runOnServer(
+            flags,
+            input.type === "inspect"
+              ? { ...input, type: "context_inspect" }
+              : { type: "context", input },
+          );
+        }).pipe(reportErrors),
+      ),
+    ),
     Command.make("profile", { ...projectLocationFlags, file: fileArgument }).pipe(
       Command.withDescription(
         "Read or save a crew profile with SynthosProfileCommand JSON: list, get, upsert, delete or restore. Does not start provider work.",
@@ -311,7 +394,7 @@ export const synthosCommand = Command.make("synthos").pipe(
     ),
     Command.make("connection", { ...projectLocationFlags, file: fileArgument }).pipe(
       Command.withDescription(
-        "Send a SynthosConnectionCommand JSON file for knowledge, mail, device intake or tool inventory. Mail approval uses a stable GCH_AUTH_TOKEN.",
+        "Send a SynthosConnectionCommand JSON file for knowledge, mail, device intake, tool inventory or an explicit tools.probe CLI version check. Mail approval uses a stable GCH_AUTH_TOKEN.",
       ),
       Command.withHandler((flags) =>
         Effect.gen(function* () {

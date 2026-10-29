@@ -1,3 +1,5 @@
+import * as SynthosContext from "../synthos-context/SynthosContext.ts";
+import { sealManifest, renderManifest } from "../synthos-context/manifest.ts";
 import { assert, describe, it } from "@effect/vitest";
 import {
   CommandId,
@@ -225,6 +227,7 @@ const fixture = Effect.gen(function* () {
   const gitRepository = yield* Ref.make(true);
   const launches = yield* Ref.make(0);
   const layer = SynthosRuntime.layer.pipe(
+    Layer.provide(Layer.mock(SynthosContext.SynthosContext)({ validate: () => Effect.void })),
     Layer.provide(
       Layer.mock(ProjectService.ProjectService)({
         getById: () =>
@@ -291,6 +294,53 @@ const fixture = Effect.gen(function* () {
 });
 
 describe("SynthosRuntime evidence", () => {
+  it.effect(
+    "rejects a changed manifest or a manifest not bound to its packet before launching",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* fixture;
+        yield* Effect.gen(function* () {
+          const runtime = yield* SynthosRuntime.SynthosRuntime;
+          const original = makeAttempt("check");
+          const manifest = sealManifest({
+            version: 1,
+            projectId,
+            role: "lead",
+            query: "synthetic",
+            settingsVersion: 0,
+            repositoryRevision: null,
+            routes: [],
+            sources: [],
+            omissions: [],
+            status: "ready",
+            neighborhoodUsed: false,
+          });
+          for (const contextManifest of [manifest, { ...manifest, query: "changed" }]) {
+            const attempt = { ...original, contextManifest };
+            const result = yield* runtime.launch(makeWorkflow(attempt), attempt).pipe(Effect.flip);
+            assert.equal(result.operation, "launch");
+          }
+          assert.equal(yield* Ref.get(test.launches), 0);
+          const packet = createGchPacket({
+            workflowId: "workflow:runtime-review",
+            task: "Synthetic context",
+            role: "lead",
+            goal: "Check",
+            context: renderManifest(manifest),
+            checkCommands: ["npm test"],
+          });
+          const bound = {
+            ...original,
+            contextManifest: manifest,
+            packetHtml: packet.html,
+            packetHash: packet.sha256,
+          };
+          yield* runtime.launch(makeWorkflow(bound), bound);
+          assert.equal(yield* Ref.get(test.launches), 1);
+        }).pipe(Effect.provide(test.layer));
+      }),
+  );
+
   it.effect("marks bounded result excerpts and points to the complete T3 evidence", () =>
     Effect.gen(function* () {
       const test = yield* fixture;

@@ -106,7 +106,11 @@ export class ObsidianVault extends Context.Service<
       readonly content: string;
       readonly expectedVersion: string | null;
     }) => Effect.Effect<Note, VaultError>;
-    readonly list: (input?: { readonly query?: string; readonly limit?: number }) => Effect.Effect<
+    readonly list: (input?: {
+      readonly query?: string;
+      readonly limit?: number;
+      readonly folders?: readonly string[];
+    }) => Effect.Effect<
       {
         readonly notes: ReadonlyArray<{ readonly path: string; readonly title: string }>;
         readonly truncated: boolean;
@@ -345,7 +349,8 @@ const make = Effect.fn("ObsidianVault.make")(function* (config: { readonly vault
         }
         const root = await rootDirectory(config.vaultRoot);
         const candidates: Array<{ path: string; title: string }> = [];
-        const pending = [""];
+        const pending = input.folders ? [...input.folders] : [""];
+        for (const folder of pending) if (folder) validatePath(`${folder}/placeholder.md`);
         let scanned = 0;
         let truncated = false;
         while (pending.length > 0 && scanned < MAX_SCAN_ENTRIES) {

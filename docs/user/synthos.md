@@ -77,6 +77,24 @@ The controller enforces persisted attempt and token reservations, bounded retrie
 
 Some GCH requirements still need enforcement beyond instructions: qualified worker guards and read-only boundaries, freezing test files before construction, construction proposals applied only by the lead, and live Jev/TypeSafe routing. T3's approval-required mode does not establish those guarantees. The current crew can edit its worktree directly. Autonomous publication and merging remain disabled; use the existing workspace controls to review and publish approved work.
 
+## Supply focused context
+
+Open **Context Deck** for a project to configure its memory sources and preview what a role will receive. Automatic recall starts disabled. Add approved Markdown notes or project folders using paths relative to the configured Obsidian vault, then enable recall. Include reviewed mission captures only in the projects where they are relevant. Add neighborhood folders for related knowledge that may help when fewer than three project notes match. The search stays within these configured paths.
+
+Pin a note when a future attempt requires it, or exclude a note or folder from recall. Pins remain active even with automatic recall disabled; remove a pin to stop requiring it. An unavailable or oversized required note blocks dispatch. Optional-source failures remain visible in the preview. Settings changes use version checks; reload if another session changed the project configuration.
+
+Select a role and refresh its preview after changing the task or saved settings. Repository guidance comes from that project's `ROUTING.md`; projects without one can still run with the missing route shown. The complete pinned GCH rules remain in force. Related memories are selected by lexical matches, so unusual terminology may need a more specific task description or an explicitly pinned note.
+
+For a dispatched attempt, the deck shows the frozen sources supplied to the agent, their versions, and omitted material. Changing settings affects future attempts, not historical evidence. Older attempts may have no context manifest. Byte counts and token estimates describe supplied context; provider-reported usage remains in Fuel telemetry. Supplied material does not establish that a model read or understood it.
+
+The CLI accepts a JSON request file:
+
+```sh
+gch synthos context context-request.json
+```
+
+Use `{"type":"get_settings","projectId":"PROJECT_ID"}` to inspect configuration, `{"type":"preview","projectId":"PROJECT_ID","task":"Investigate vault conflicts","role":"crew"}` to preview selection, or `{"type":"inspect","workflowId":"WORKFLOW_ID"}` to inspect frozen attempt manifests. Add `attemptId` to select one attempt. Reads use the selected host's read permission; saving settings requires operate permission.
+
 ## Connect knowledge and mail
 
 Set configuration on the host running the server, through its process environment or the development checkout's gitignored `.env.local`, then restart the server. Never put credentials in the browser bundle.
@@ -213,3 +231,25 @@ To restore a deleted graph record after leaving the view, use `gch synthos knowl
 The Night Riders scene, vehicle geometry, and brand direction originate from the sibling GCH project: [PRODUCT.md](https://github.com/Synthminds/GCH/blob/a11ebfb89bbc7fcf9cb47df54454b66412ddeedc/PRODUCT.md), [DESIGN.md](https://github.com/Synthminds/GCH/blob/a11ebfb89bbc7fcf9cb47df54454b66412ddeedc/DESIGN.md), and [vehicle provenance](../../apps/web/public/synthos/vehicles/asset-provenance.json). The source [principles](https://github.com/Synthminds/GCH/blob/a11ebfb89bbc7fcf9cb47df54454b66412ddeedc/docs/PRINCIPLES.md) document the inherited control rules and gaps in historical source material. This fork preserves T3 Code's upstream license and attribution.
 
 Verification requires numeric exit receipts for the configured commands. Providers that do not expose those receipts, including the current Claude command adapter, remain unqualified for the lead verification role; the workflow holds at that evidence gate.
+
+### Explore connected knowledge
+
+Open **Knowledge**, choose your project, and enable its graph sources. Synthome supplies public resources; SynthBrain imports an approved local graph export. Search the loaded snapshot, inspect incoming and outgoing relationships, or find a bounded path. The optional 3D view uses the same evidence and selection as 2D; its orbit moves only when you adjust the control.
+
+Add evidence to the active mission, or pin it for future attempts across the project, then open **Context** to inspect exactly what a mission will receive. Clear pins to stop supplying them. Automatic graph recall is off until enabled for the project and supplements insufficient project memory within the existing context budget. Source refreshes do not rewrite historical attempts.
+
+### Specialist briefs and independent review
+
+Each mission role receives one focused brief for planning, research, implementation, documentation, or skeptical review. This applies the selected workflow ideas from [Claude Vibe Squad](https://github.com/Synthminds/claude-vibe-squad) within T3's existing execution and permission system; its coordinator, daemons, and plugins are not installed.
+
+For sensitive or broad-impact work, select **Require independent review** when creating the mission. Missions that supplied private Obsidian or SynthBrain evidence also require it. The reviewer must use a recognized model family different from the construction role; unknown model aliases require a canonical model selection. If that requirement cannot be met, the mission blocks for attention. A different model family does not itself prove a review is correct: candidate-bound command evidence and the GCH decision gate still apply.
+
+Crew assignments can include an explicit backup model. The host selects it before reservation when the preferred model is unavailable and the backup is ready in its catalog. It records the actual selection on the attempt; an uncertain launch never triggers a second automatic launch. Catalog readiness is not a measured quality claim.
+
+### Check a CLI supply
+
+Open **Tools + mail → CLI supply deck**, select a tool, and choose **Run version probe**. The host runs that tool's fixed version command and saves a receipt. The cartridge lights while the check is running. Refreshing the inventory does not run probes.
+
+Installed, configured, authenticated, active, and probed describe different things. **Working** means the recorded version command exited successfully; it does not verify account access or an end-to-end task. **Failed** includes the failure category. **Unmeasured** means no check has run, and **stale** means the executable changed after the saved check. Tools without a registered version command remain unmeasured. Probe receipts survive a host restart.
+
+Agents can request the same check with `gch synthos connection request.json`, using `{ "type": "tools.probe", "toolId": "ripgrep" }`. Running a probe requires permission to operate on the selected host.
