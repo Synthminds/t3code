@@ -21,7 +21,7 @@ macOS packaging must run on macOS: it uses `sips`, `iconutil`, the Apple linker,
 
 ## Build with GitHub Actions
 
-After this branch is available in your repository, use **Actions → SynthOS macOS Apple silicon → Run workflow** and select the source branch. The manual workflow uses the standard `macos-15` Apple silicon runner and checks the actual host architecture before building.
+GitHub requires `.github/workflows/synthos-macos.yml` to exist on your repository's default branch before it can be run manually. Once the workflow has been merged there, use **Actions → SynthOS macOS Apple silicon → Run workflow** and select the source branch containing the SynthOS implementation. Pushing only a feature branch does not make the workflow available for manual runs. The workflow uses the standard `macos-15` Apple silicon runner and checks the actual host architecture before building.
 
 It uploads the DMG, ZIP, source commit record, and SHA-256 checksums as a run artifact retained for 14 days. It verifies the packaged app identifier and executable architecture. It does not launch-test the app, publish a GitHub release, request Apple signing secrets, or enable an update feed. GitHub runner availability and account usage limits still apply.
 

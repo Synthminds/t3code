@@ -33,6 +33,9 @@
         "setup-worktree.ts",
         "sign-macos.ts",
         "smoke-desktop-app.ts",
+        // The standalone companion runs this build and passes its browser entry to esbuild by URL.
+        "synthos-companion/build-g2.mjs",
+        "synthos-companion/g2/sdk-entry.js",
         "verify-windows-desktop-artifact.ts",
       ],
       "ignoreDependencies": ["agent-device", "esbuild"],
@@ -87,11 +90,20 @@
     "apps/web": {
       // Worktree setup (scripts/setup-worktree.ts) runs this directly, and evidence
       // fixtures run under node.
-      "entry": ["scripts/warm-dep-cache.ts", "test/fixtures/**/*.mjs"],
+      "entry": [
+        "scripts/warm-dep-cache.ts",
+        "test/fixtures/**/*.mjs",
+        // Night Riders imports this static module by URL without bundling it.
+        "public/synthos/night-riders-engine.js!",
+      ],
       // UI component modules are copied and adapted as cohesive sets. Keep their
       // named subcomponents even before they have callers; the file audit still
       // reports an entire component module when nothing imports it.
-      "ignoreIssues": { "src/components/ui/*.tsx": ["exports", "nsExports", "duplicates"] },
+      "ignoreIssues": {
+        "src/components/ui/*.tsx": ["exports", "nsExports", "duplicates"],
+        // Keep the complete vendored Three.js modules; file reachability remains checked.
+        "public/synthos/vendor/*.js": ["exports", "nsExports"],
+      },
     },
     "apps/marketing": {
       // `astro check` runs from the typecheck task in vite.config.ts, which knip does not read.
