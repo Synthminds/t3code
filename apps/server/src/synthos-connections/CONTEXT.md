@@ -12,4 +12,6 @@ DAM is the asset library's system of record. SynthOS reads it only through DAM's
 
 The cockpit reaches remote environments, so a client built before a connection may talk to a server that has it. The shared `status` list therefore keeps the ids old clients can decode: DAM reports its status through `library.status` instead, and current clients drop list ids they do not know.
 
+The library aborts superseded requests, and the server answers them 499. In development React mounts the panel twice, so the first of each pair of preview requests usually reaches DAM before its abort; production mounts once, so this is not a leak.
+
 Mail delivery uses an immutable reviewed envelope. An unknown send result requires reconciliation before retry; a failed observation does not establish failed delivery. See [knowledge and mail](../../../../docs/user/synthos.md#connect-knowledge-and-mail).
