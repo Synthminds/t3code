@@ -47,6 +47,7 @@ import { NightRidersScene } from "./scene/NightRidersScene";
 import { useSynthosWorkflows, useSynthosWorkflowDetail } from "./useSynthosWorkflows";
 import { synthosRequest } from "./synthosRequest";
 import { SynthosKnowledge } from "./SynthosKnowledge";
+import { SynthosLibrary } from "./SynthosLibrary";
 import { SynthosTools } from "./SynthosTools";
 import { SynthosDevices } from "./SynthosDevices";
 import { SynthosPolicyInspector } from "./SynthosPolicyInspector";
@@ -606,11 +607,14 @@ function CockpitEnvironment({
           />
         )}
         {panel === "knowledge" && (
-          <SynthosKnowledge
-            environmentId={environmentId}
-            statuses={statuses}
-            activeWorkflow={selected}
-          />
+          <>
+            <SynthosKnowledge
+              environmentId={environmentId}
+              statuses={statuses}
+              activeWorkflow={selected}
+            />
+            <SynthosLibrary environmentId={environmentId} statuses={statuses} />
+          </>
         )}
         {panel === "tools" && <SynthosTools environmentId={environmentId} statuses={statuses} />}
         {panel === "devices" && (
