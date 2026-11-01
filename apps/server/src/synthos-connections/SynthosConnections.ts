@@ -346,10 +346,10 @@ const make = Effect.gen(function* () {
         "library.principle",
       ],
       reason: !config.damRoot
-        ? "Set SYNTHOS_DAM_ROOT to a DAM checkout with its dependencies installed on this host. SYNTHOS_DAM_OWNER=1 adds owner-only items for sessions that can read files."
+        ? "Set SYNTHOS_DAM_ROOT to a DAM checkout with its dependencies installed on this host. Owner-only items stay off unless SYNTHOS_DAM_OWNER=1 is also set."
         : config.damOwner
           ? "DAM checkout configured; availability is checked when first used. Owner-only items are on for sessions that can read files on this host."
-          : "DAM checkout configured; availability is checked when first used. Public items only: set SYNTHOS_DAM_OWNER=1 to add owner-only items for sessions that can read files.",
+          : "DAM checkout configured; availability is checked when first used. Owner-only items are off; set SYNTHOS_DAM_OWNER=1 to show them to sessions that can read files.",
     },
     {
       id: "harness",

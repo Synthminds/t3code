@@ -90,7 +90,7 @@ const LibraryQuery = Schema.String.check(Schema.isMaxLength(200));
 const LibraryList = <S extends Schema.Constraint>(item: S, maxLength: number) =>
   Schema.Array(item).check(Schema.isMaxLength(maxLength));
 export const SYNTHOS_LIBRARY_MAX_TEXT_BYTES = 1_048_576;
-export const SYNTHOS_LIBRARY_MAX_PREVIEW_BYTES = 2_097_152;
+export const SYNTHOS_LIBRARY_MAX_PREVIEW_BYTES = 1_048_576;
 
 export const SynthosLibraryKind = Schema.Literals([
   "design-system",
