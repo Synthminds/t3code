@@ -8,15 +8,15 @@ const accepts = Schema.is(SynthosConnectionCommand);
 
 describe("SynthosConnectionResult", () => {
   it("drops a connection id this client does not know instead of failing the status list", () => {
-    const dam = {
-      id: "dam",
-      label: "DAM Library",
+    const vault = {
+      id: "obsidian",
+      label: "Obsidian",
       state: "configured",
-      capabilities: ["library.search"],
-      reason: "DAM checkout configured.",
+      capabilities: ["obsidian.read"],
+      reason: "Vault path configured.",
     };
-    expect(decodeResult({ connections: [dam, { ...dam, id: "future-connection" }] })).toEqual({
-      connections: [dam],
+    expect(decodeResult({ connections: [vault, { ...vault, id: "future-connection" }] })).toEqual({
+      connections: [vault],
     });
   });
 });

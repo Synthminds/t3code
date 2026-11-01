@@ -25,6 +25,20 @@ import * as NativeToolInventory from "./NativeToolInventory.ts";
 
 const decodeDraft = Schema.decodeUnknownEffect(SynthosMailDraft);
 const isProposal = Schema.is(SynthosDeviceProposal);
+// The status result as clients built at 311fa522 decode it: these ids only, in a plain array.
+const isStatusAt311fa522 = Schema.is(
+  Schema.Struct({
+    connections: Schema.Array(
+      Schema.Struct({
+        id: Schema.Literals(["agentmail", "mem", "obsidian", "harness", "fieldy", "g2"]),
+        label: Schema.String,
+        state: Schema.Literals(["unavailable", "configured", "companion"]),
+        capabilities: Schema.Array(Schema.String),
+        reason: Schema.String,
+      }),
+    ),
+  }),
+);
 
 const actor = {
   sessionId: "operator-session",
@@ -66,6 +80,26 @@ function fixture(
 }
 
 describe("SynthosConnections", () => {
+  it.effect("keeps the status list readable by clients built before the DAM library", () =>
+    Effect.gen(function* () {
+      yield* migration;
+      const service = yield* SynthosConnections.SynthosConnections;
+      expect(isStatusAt311fa522(yield* service.execute(actor, { type: "status" }))).toBe(true);
+      expect(yield* service.execute(actor, { type: "library.status" })).toMatchObject({
+        library: "status",
+        state: "configured",
+      });
+    }).pipe(
+      Effect.provide(
+        fixture(async () => Response.json({}), {
+          ...configured,
+          damRoot: "/srv/dam",
+          damOwner: "unrecognized",
+        }),
+      ),
+    ),
+  );
+
   it.effect("keeps unavailable setup and unauthorized operations explicit without HTTP", () => {
     let calls = 0;
     return Effect.gen(function* () {

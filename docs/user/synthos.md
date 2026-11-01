@@ -127,7 +127,7 @@ Every file and cover you retrieve carries the item's licence, holder and licence
 
 Files kept in DAM's private storage and originals still waiting for upload need DAM's authenticated endpoints, which are not available yet. The library says when a file lives in private storage. DAM's local server does not report whether a principle document has been reviewed.
 
-Agents can make the same reads with `gch synthos connection request.json`, which takes the request file as its argument (there is no `--file` flag). The file holds one request, for example `{ "type": "library.search", "query": "magnetic button" }` or `{ "type": "library.file", "id": "ASSET_ID", "format": "prompt" }`. `{ "type": "library.facets" }` lists the style and pattern ids that `library.search` accepts as `style` and `pattern`, with each one's count. Library reads require `orchestration:read`; owner-only items also need a `GCH_AUTH_TOKEN` that carries `filesystem:read`.
+Agents can make the same reads with `gch synthos connection request.json`, which takes the request file as its argument (there is no `--file` flag). The file holds one request, for example `{ "type": "library.search", "query": "magnetic button" }` or `{ "type": "library.file", "id": "ASSET_ID", "format": "prompt" }`. `{ "type": "library.status" }` says whether the library is configured on that host and whether owner-only items are on. `{ "type": "library.facets" }` lists the style and pattern ids that `library.search` accepts as `style` and `pattern`, with each one's count. Library reads require `orchestration:read`; owner-only items also need a `GCH_AUTH_TOKEN` that carries `filesystem:read`.
 
 ## Connect 21st.dev design tools
 

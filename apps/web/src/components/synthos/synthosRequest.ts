@@ -12,14 +12,18 @@ export async function synthosRequest<T>(
   init?: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal },
 ): Promise<T> {
   init?.signal?.throwIfAborted();
-  const result = await request.run(appAtomRegistry, {
-    environmentId,
-    input: {
-      path,
-      method: init?.method ?? "GET",
-      ...(init?.body === undefined ? {} : { body: init.body }),
+  const result = await request.run(
+    appAtomRegistry,
+    {
+      environmentId,
+      input: {
+        path,
+        method: init?.method ?? "GET",
+        ...(init?.body === undefined ? {} : { body: init.body }),
+      },
     },
-  });
+    { signal: init?.signal },
+  );
   init?.signal?.throwIfAborted();
   if (result._tag !== "Success") throw squashAtomCommandFailure(result);
   return result.value as T;

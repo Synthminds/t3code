@@ -1,9 +1,8 @@
 /* oxlint-disable shadcn/no-unknown-classes -- SynthOS uses a scoped, standalone stylesheet. */
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Copy, Download, ExternalLink, Library, Lightbulb, ScrollText, Search } from "lucide-react";
 import type {
   EnvironmentId,
-  SynthosConnectionStatus,
   SynthosLibraryAsset,
   SynthosLibraryCard,
   SynthosLibraryCommand,
@@ -28,6 +27,8 @@ type Answer<C extends SynthosLibraryCommand> = Extract<
   { library: C["type"] extends `library.${infer Library}` ? Library : never }
 >;
 type Facets = Answer<{ type: "library.facets" }>;
+type LibraryStatus = Answer<{ type: "library.status" }>;
+type SearchResults = Answer<{ type: "library.search" }>;
 type Settled<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: unknown };
@@ -110,81 +111,116 @@ function download(text: string, name: string, type: string) {
   anchor.click();
 }
 
-export function SynthosLibrary({
-  environmentId,
-  statuses,
-  statusError,
-}: {
-  environmentId: EnvironmentId | null;
-  statuses: readonly SynthosConnectionStatus[];
-  statusError: string | null;
-}) {
-  const [view, setView] = useState<View>("assets");
-  const [visited, setVisited] = useState<ReadonlySet<View>>(() => new Set(["assets"]));
-  const status = statuses.find((item) => item.id === "dam");
-  const statusFailed = statusError !== null && statuses.length === 0;
+export function SynthosLibrary({ environmentId }: { environmentId: EnvironmentId | null }) {
+  // Select lists open inside the cockpit so they take its dark palette.
+  const portal = useRef<HTMLElement>(null);
   return (
-    <section className="mt-10" aria-labelledby="sx-library-heading">
+    <section className="mt-10" aria-labelledby="sx-library-heading" ref={portal}>
       <div className="sx-section-heading">
         <div>
           <h2 id="sx-library-heading">DAM library</h2>
           <p>Your asset library, read from DAM. Check licence and provenance before reuse.</p>
         </div>
       </div>
-      {environmentId === null || status?.state !== "configured" ? (
-        <section className="sx-panel">
-          <header className="sx-panel-title">
-            <Library size={17} />
-            <h3>Library connection</h3>
-            <span>{status?.state.toUpperCase() ?? "UNAVAILABLE"}</span>
-          </header>
-          <p className={statusFailed ? "sx-error m-4" : "sx-empty"}>
-            {environmentId === null
-              ? "Connect an environment to load its library."
-              : statusFailed
-                ? "This host's connections could not be loaded, so the library is unavailable."
-                : statuses.length === 0
-                  ? "Loading this host's connections…"
-                  : (status?.reason ??
-                    "This host does not offer a DAM library connection. Update its server to use one.")}
-          </p>
-        </section>
+      {environmentId === null ? (
+        <ConnectionNotice state="UNAVAILABLE" text="Connect an environment to load its library." />
       ) : (
-        <>
-          <nav className="sx-knowledge-tabs" aria-label="Library views">
-            {VIEWS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                aria-current={view === item.id ? "page" : undefined}
-                onClick={() => {
-                  setView(item.id);
-                  setVisited((current) => new Set([...current, item.id]));
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-          <p className="sx-muted mb-4">{status.reason}</p>
-          {visited.has("assets") && (
-            <div hidden={view !== "assets"}>
-              <LibraryAssets environmentId={environmentId} />
-            </div>
-          )}
-          {visited.has("ideas") && (
-            <div hidden={view !== "ideas"}>
-              <LibraryIdeas environmentId={environmentId} />
-            </div>
-          )}
-          {visited.has("principles") && (
-            <div hidden={view !== "principles"}>
-              <LibraryPrinciples environmentId={environmentId} />
-            </div>
-          )}
-        </>
+        <LibraryConnection key={environmentId} environmentId={environmentId} portal={portal} />
       )}
     </section>
+  );
+}
+
+function ConnectionNotice({
+  state,
+  text,
+  alert = false,
+}: {
+  state: string;
+  text: string;
+  alert?: boolean;
+}) {
+  return (
+    <section className="sx-panel">
+      <header className="sx-panel-title">
+        <Library size={17} />
+        <h3>Library connection</h3>
+        <span>{state}</span>
+      </header>
+      <p className={alert ? "sx-error m-4" : "sx-empty"} role={alert ? "alert" : undefined}>
+        {text}
+      </p>
+    </section>
+  );
+}
+
+function LibraryConnection({
+  environmentId,
+  portal,
+}: {
+  environmentId: EnvironmentId;
+  portal: RefObject<HTMLElement | null>;
+}) {
+  const [status, setStatus] = useState<Detail<LibraryStatus>>({ state: "loading" });
+  const [view, setView] = useState<View>("assets");
+  const [visited, setVisited] = useState<ReadonlySet<View>>(() => new Set(["assets"]));
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- read the selected host's library status once, and abort it on unmount
+  useEffect(() => {
+    const controller = new AbortController();
+    void settle(library(environmentId, { type: "library.status" }, controller.signal)).then(
+      (outcome) => {
+        if (controller.signal.aborted) return;
+        setStatus(
+          outcome.ok
+            ? { state: "ready", value: outcome.value }
+            : { state: "error", message: libraryFailureMessage(outcome.error) },
+        );
+      },
+    );
+    return () => controller.abort();
+  }, [environmentId]);
+
+  if (status.state === "loading" || status.state === "idle")
+    return <ConnectionNotice state="LOADING" text="Loading the library's status on this host…" />;
+  if (status.state === "error")
+    return <ConnectionNotice state="ERROR" text={status.message} alert />;
+  if (status.value.state !== "configured")
+    return <ConnectionNotice state="UNAVAILABLE" text={status.value.reason} />;
+  return (
+    <>
+      <nav className="sx-knowledge-tabs" aria-label="Library views">
+        {VIEWS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            aria-current={view === item.id ? "page" : undefined}
+            onClick={() => {
+              setView(item.id);
+              setVisited((current) => new Set([...current, item.id]));
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+      <p className="sx-muted mb-4">{status.value.reason}</p>
+      {visited.has("assets") && (
+        <div hidden={view !== "assets"}>
+          <LibraryAssets environmentId={environmentId} portal={portal} />
+        </div>
+      )}
+      {visited.has("ideas") && (
+        <div hidden={view !== "ideas"}>
+          <LibraryIdeas environmentId={environmentId} portal={portal} />
+        </div>
+      )}
+      {visited.has("principles") && (
+        <div hidden={view !== "principles"}>
+          <LibraryPrinciples environmentId={environmentId} />
+        </div>
+      )}
+    </>
   );
 }
 
@@ -275,11 +311,24 @@ function Heading({ children }: { children: ReactNode }) {
   return <h4 className="m-0 font-semibold text-2xs">{children}</h4>;
 }
 
+// A facet no visible item carries would only lead to an empty search.
 function facetItems(all: string, facets: Facets["styles"] | Facets["patterns"]) {
+  const used = facets.filter((facet) => facet.count > 0);
+  if (used.length === 0) return null;
   return {
     all,
-    ...Object.fromEntries(facets.map((facet) => [facet.id, `${facet.label} (${facet.count})`])),
+    ...Object.fromEntries(used.map((facet) => [facet.id, `${facet.label} (${facet.count})`])),
   };
+}
+
+function matchNote({ total, items, dropped = 0 }: SearchResults) {
+  const parts = [`Showing ${items.length} of ${total}.`];
+  if (dropped > 0)
+    parts.push(
+      `${dropped} ${dropped === 1 ? "match" : "matches"} could not be read by this version of SynthOS.`,
+    );
+  if (total - dropped > items.length) parts.push("Narrow the search to find more.");
+  return parts.join(" ");
 }
 
 function FacetSelect({
@@ -287,11 +336,13 @@ function FacetSelect({
   value,
   items,
   onChange,
+  portal,
 }: {
   label: string;
   value: string;
   items: Record<string, string>;
   onChange: (value: string) => void;
+  portal: RefObject<HTMLElement | null>;
 }) {
   return (
     <Select
@@ -304,7 +355,7 @@ function FacetSelect({
       <SelectTrigger size="sm" aria-label={label}>
         <SelectValue />
       </SelectTrigger>
-      <SelectPopup>
+      <SelectPopup portalContainer={portal}>
         {Object.entries(items).map(([id, text]) => (
           <SelectItem key={id} value={id}>
             {text}
@@ -315,13 +366,19 @@ function FacetSelect({
   );
 }
 
-function LibraryAssets({ environmentId }: { environmentId: EnvironmentId }) {
+function LibraryAssets({
+  environmentId,
+  portal,
+}: {
+  environmentId: EnvironmentId;
+  portal: RefObject<HTMLElement | null>;
+}) {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<SynthosLibraryKind | "all">("all");
   const [style, setStyle] = useState("all");
   const [pattern, setPattern] = useState("all");
   const [facets, setFacets] = useState<Detail<Facets>>({ state: "loading" });
-  const [results, setResults] = useState<Answer<{ type: "library.search" }> | null>(null);
+  const [results, setResults] = useState<SearchResults | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -389,6 +446,10 @@ function LibraryAssets({ environmentId }: { environmentId: EnvironmentId }) {
     );
   }
 
+  const styleItems =
+    facets.state === "ready" ? facetItems("All styles", facets.value.styles) : null;
+  const patternItems =
+    facets.state === "ready" ? facetItems("All patterns", facets.value.patterns) : null;
   return (
     <div className="sx-knowledge-grid">
       <section className="sx-panel">
@@ -416,7 +477,7 @@ function LibraryAssets({ environmentId }: { environmentId: EnvironmentId }) {
             <SelectTrigger size="sm" aria-label="Kind">
               <SelectValue />
             </SelectTrigger>
-            <SelectPopup>
+            <SelectPopup portalContainer={portal}>
               {Object.entries(KIND_FILTERS).map(([value, label]) => (
                 <SelectItem key={value} value={value}>
                   {label}
@@ -424,21 +485,23 @@ function LibraryAssets({ environmentId }: { environmentId: EnvironmentId }) {
               ))}
             </SelectPopup>
           </Select>
-          {facets.state === "ready" && (
-            <>
-              <FacetSelect
-                label="Style"
-                value={style}
-                items={facetItems("All styles", facets.value.styles)}
-                onChange={setStyle}
-              />
-              <FacetSelect
-                label="Pattern"
-                value={pattern}
-                items={facetItems("All patterns", facets.value.patterns)}
-                onChange={setPattern}
-              />
-            </>
+          {styleItems && (
+            <FacetSelect
+              label="Style"
+              value={style}
+              items={styleItems}
+              onChange={setStyle}
+              portal={portal}
+            />
+          )}
+          {patternItems && (
+            <FacetSelect
+              label="Pattern"
+              value={pattern}
+              items={patternItems}
+              onChange={setPattern}
+              portal={portal}
+            />
           )}
           {facets.state === "error" && searchError === null && (
             <p className="sx-muted">Style and pattern filters are unavailable. {facets.message}</p>
@@ -471,13 +534,11 @@ function LibraryAssets({ environmentId }: { environmentId: EnvironmentId }) {
               />
             </Row>
           ))}
-          {results?.items.length === 0 && (
+          {results?.total === 0 && (
             <p className="sx-empty">No assets matched. Try fewer words or other filters.</p>
           )}
           {results !== null && results.total > results.items.length && (
-            <p className="sx-panel-note">
-              Showing {results.items.length} of {results.total}. Narrow the search to find more.
-            </p>
+            <p className="sx-panel-note">{matchNote(results)}</p>
           )}
         </div>
       </section>
@@ -769,7 +830,13 @@ function AssetDetail({
   );
 }
 
-function LibraryIdeas({ environmentId }: { environmentId: EnvironmentId }) {
+function LibraryIdeas({
+  environmentId,
+  portal,
+}: {
+  environmentId: EnvironmentId;
+  portal: RefObject<HTMLElement | null>;
+}) {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<keyof typeof IDEA_FILTERS>("all");
   const [ideas, setIdeas] = useState<ReadonlyArray<IdeaSummary> | null>(null);
@@ -854,7 +921,7 @@ function LibraryIdeas({ environmentId }: { environmentId: EnvironmentId }) {
             <SelectTrigger size="sm" aria-label="Idea kind">
               <SelectValue />
             </SelectTrigger>
-            <SelectPopup>
+            <SelectPopup portalContainer={portal}>
               {Object.entries(IDEA_FILTERS).map(([value, label]) => (
                 <SelectItem key={value} value={value}>
                   {label}

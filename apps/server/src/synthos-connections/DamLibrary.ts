@@ -61,6 +61,7 @@ export const MAX_MESSAGE_BYTES = 2 * 1_048_576;
 // A flood stops a process, not a long uptime: DAM logs a stack trace per INTERNAL answer.
 export const MAX_STDERR_BYTES = 262_144;
 export const STDERR_WINDOW = Duration.seconds(10);
+const STDERR_BUCKET_MILLIS = 100;
 const MCP_PROTOCOL_VERSION = "2025-06-18";
 const INVALID_PARAMS = -32_602;
 // PATH locates node, the temp variables tsx's compile cache; node needs SystemRoot on Windows.
@@ -283,13 +284,13 @@ const loggableId = (entry: unknown) => {
 
 // A list entry this version cannot read (a newer kind, format or bound) is dropped rather than
 // failing the page, and logged by id and schema path only: never its values.
-function decodeEntries<A>(
+const decodeEntries = Effect.fn("DamLibrary.decodeEntries")(function* <A>(
   decode: (entry: unknown) => Effect.Effect<A, Schema.SchemaError>,
   entries: ReadonlyArray<unknown>,
   tool: string,
   mode: Mode,
-): Effect.Effect<Array<A>> {
-  return Effect.forEach(entries, (entry) =>
+) {
+  const decoded = yield* Effect.forEach(entries, (entry) =>
     decode(entry).pipe(
       Effect.map((value) => [value]),
       Effect.catch((error) =>
@@ -305,7 +306,58 @@ function decodeEntries<A>(
         ),
       ),
     ),
-  ).pipe(Effect.map((decoded) => decoded.flat()));
+  );
+  return decoded.flat();
+});
+
+// Sliding over 100 ms buckets, so a burst that straddles any boundary still counts in one window:
+// every STDERR_WINDOW span (and at most one bucket more) is held to MAX_STDERR_BYTES.
+export function makeStderrBudget() {
+  const windowBuckets = Duration.toMillis(STDERR_WINDOW) / STDERR_BUCKET_MILLIS;
+  const buckets = new Map<number, number>();
+  let total = 0;
+  return (bytes: number) =>
+    Effect.map(Clock.currentTimeMillis, (now) => {
+      const bucket = Math.floor(now / STDERR_BUCKET_MILLIS);
+      for (const [key, held] of buckets) {
+        if (key >= bucket - windowBuckets) break;
+        buckets.delete(key);
+        total -= held;
+      }
+      buckets.set(bucket, (buckets.get(bucket) ?? 0) + bytes);
+      total += bytes;
+      return total > MAX_STDERR_BYTES;
+    });
+}
+
+const CAPABILITIES = [
+  "library.search",
+  "library.facets",
+  "library.asset",
+  "library.file",
+  "library.preview",
+  "library.ideas",
+  "library.idea",
+  "library.principles",
+  "library.principle",
+];
+
+function libraryStatus(config: ConnectionsConfig.ConnectionsConfig["Service"]) {
+  const checkout = config.damRoot
+    ? "DAM checkout configured; availability is checked when first used."
+    : "Set SYNTHOS_DAM_ROOT to a DAM checkout with its dependencies installed on this host.";
+  const owner =
+    config.damOwner === "on"
+      ? "Owner-only items are on for sessions that can read files on this host."
+      : config.damOwner === "unrecognized"
+        ? "SYNTHOS_DAM_OWNER has a value SynthOS does not recognize, so owner-only items are off; set it to 1 or true to show them to sessions that can read files."
+        : "Owner-only items are off; set SYNTHOS_DAM_OWNER=1 to show them to sessions that can read files.";
+  return {
+    library: "status",
+    state: config.damRoot ? "configured" : "unavailable",
+    capabilities: CAPABILITIES,
+    reason: `${checkout} ${owner}`,
+  } as const;
 }
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -492,19 +544,11 @@ const make = Effect.gen(function* () {
       }),
       Effect.forkScoped,
     );
-    let stderrWindowStart = yield* Clock.currentTimeMillis;
-    let stderrBytes = 0;
+    const overStderrBudget = makeStderrBudget();
     yield* Stream.runForEach(handle.stderr, (chunk) =>
-      Effect.flatMap(Clock.currentTimeMillis, (now) => {
-        if (now - stderrWindowStart >= Duration.toMillis(STDERR_WINDOW)) {
-          stderrWindowStart = now;
-          stderrBytes = 0;
-        }
-        stderrBytes += chunk.byteLength;
-        return stderrBytes > MAX_STDERR_BYTES
-          ? close(failure("transport"), "DAM_STDERR_LIMIT")
-          : Effect.void;
-      }),
+      Effect.flatMap(overStderrBudget(chunk.byteLength), (over) =>
+        over ? close(failure("transport"), "DAM_STDERR_LIMIT") : Effect.void,
+      ),
     ).pipe(Effect.ignore, Effect.forkScoped);
     yield* Stream.fromQueue(outgoing).pipe(
       Stream.run(handle.stdin),
@@ -646,6 +690,7 @@ const make = Effect.gen(function* () {
 
   const execute: DamLibrary["Service"]["execute"] = Effect.fn("DamLibrary.execute")(
     function* (actor, command) {
+      if (command.type === "library.status") return libraryStatus(config);
       if (config.damRoot === undefined) return yield* failure("unavailable");
       const mode: Mode =
         config.damOwner === "on" && actor.scopes.includes("filesystem:read") ? "owner" : "public";
@@ -662,11 +707,11 @@ const make = Effect.gen(function* () {
             return yield* failure("response_invalid");
           }
           const cards = yield* decodeEntries(decodeCard, value.items, "search_assets", mode);
-          // total stays DAM's count, so it can include entries dropped above.
           return {
             library: "search",
             total: value.total,
             items: cards.map((item) => toCard(item, mode)),
+            dropped: value.items.length - cards.length,
           };
         }
         case "library.facets": {

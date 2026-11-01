@@ -7,7 +7,7 @@ const Content = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(20
 const Limit = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }));
 
 export const SynthosConnectionStatus = Schema.Struct({
-  id: Schema.Literals(["agentmail", "mem", "obsidian", "dam", "harness", "fieldy", "g2"]),
+  id: Schema.Literals(["agentmail", "mem", "obsidian", "harness", "fieldy", "g2"]),
   label: Schema.String,
   state: Schema.Literals(["unavailable", "configured", "companion"]),
   capabilities: Schema.Array(Schema.String),
@@ -117,6 +117,7 @@ const LibraryLicenceStatus = Schema.Literals(["verified", "unverified", "unknown
 const LibraryFrameworkStatus = Schema.Literals(["provided", "needed", "derived", "unknown"]);
 
 export const SynthosLibraryCommand = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("library.status") }),
   Schema.Struct({
     type: Schema.Literal("library.search"),
     query: Schema.optionalKey(LibraryQuery),
@@ -326,10 +327,19 @@ const LibraryRetrievedLicence = Schema.Struct({
 });
 
 export const SynthosLibraryResult = Schema.Union([
+  // DAM's status is a library result, not a row in the shared status list that older clients decode.
+  Schema.Struct({
+    library: Schema.Literal("status"),
+    state: Schema.Literals(["unavailable", "configured"]),
+    capabilities: LibraryList(LibraryText(40), 20),
+    reason: LibraryText(1_000),
+  }),
   Schema.Struct({
     library: Schema.Literal("search"),
+    // DAM's count of matches, including entries this version could not read (dropped).
     total: NonNegativeInt,
     items: LibraryList(SynthosLibraryCard, 50),
+    dropped: Schema.optionalKey(NonNegativeInt),
   }),
   SynthosLibraryAsset,
   Schema.Struct({
