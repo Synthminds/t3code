@@ -24,6 +24,7 @@ import * as ConnectionsConfig from "./ConnectionsConfig.ts";
 import * as DamLibrary from "./DamLibrary.ts";
 
 const isResult = Schema.is(SynthosLibraryResult);
+const publicArgs = ["--import", "tsx", "scripts/mcp/server.ts"];
 const reader: ReadonlyArray<AuthEnvironmentScope> = ["orchestration:read"];
 const fileReader: ReadonlyArray<AuthEnvironmentScope> = ["orchestration:read", "filesystem:read"];
 
@@ -138,8 +139,12 @@ const checkout = Effect.fn("test.damCheckout")(function* (dependencies = true) {
 const installDependencies = Effect.fn("test.installDependencies")(function* (root: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  yield* fs.makeDirectory(path.join(root, "node_modules", ".bin"), { recursive: true });
-  yield* fs.writeFileString(path.join(root, "node_modules", ".bin", "tsx"), "");
+  yield* fs.makeDirectory(path.join(root, "node_modules", "tsx"), { recursive: true });
+  yield* fs.writeFileString(
+    path.join(root, "node_modules", "tsx", "package.json"),
+    '{"name":"tsx","type":"module","exports":"./loader.mjs"}',
+  );
+  yield* fs.writeFileString(path.join(root, "node_modules", "tsx", "loader.mjs"), "export {};\n");
 });
 
 const libraryLayer = (
@@ -286,20 +291,20 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
         expect(yield* reasonOf(reader, { type: "library.asset", id: "owner.original" })).toBe(
           "not_found",
         );
-        expect(dam.spawns.map((command) => command.args)).toEqual([["scripts/mcp/server.ts"]]);
+        expect(dam.spawns.map((command) => command.args)).toEqual([publicArgs]);
         // An older DAM omits access, so everything from the owner process is marked owner-only.
         expect(yield* searchIds(fileReader)).toEqual([
           "public.button:owner",
           "owner.original:owner",
         ]);
         expect(dam.spawns.map((command) => command.args)).toEqual([
-          ["scripts/mcp/server.ts"],
-          ["scripts/mcp/server.ts", "--owner"],
+          publicArgs,
+          [...publicArgs, "--owner"],
         ]);
       }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner: true })));
       yield* Effect.gen(function* () {
         expect(yield* searchIds(fileReader)).toEqual(["public.button:public"]);
-        expect(dam.spawns.at(-1)?.args).toEqual(["scripts/mcp/server.ts"]);
+        expect(dam.spawns.at(-1)?.args).toEqual(publicArgs);
       }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner: false })));
     }).pipe(Effect.scoped),
   );
@@ -359,7 +364,8 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
       );
       const canonical = yield* fs.realPath(root);
       const [spawned] = dam.spawns;
-      expect(spawned?.command).toBe(path.join(canonical, "node_modules", ".bin", "tsx"));
+      expect(spawned?.command).toBe("node");
+      expect(spawned?.args).toEqual(publicArgs);
       expect(spawned?.options).toMatchObject({
         cwd: canonical,
         env: { PATH: "/usr/bin", TMPDIR: "/tmp" },
@@ -661,16 +667,23 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
           yield* run(reader, search);
           expect([dam.spawns.length, dam.initializes()]).toEqual([1, 1]);
 
+          // A call still waiting on a process that dies fails at once, without its timeout.
+          yield* Queue.clear(dam.received);
+          reply = "hang";
+          const waiting = yield* run(reader, search).pipe(Effect.flip, Effect.forkChild);
+          yield* Queue.take(dam.received);
           reply = "crash";
           expect(yield* reasonOf(reader, search)).toBe("transport");
+          expect((yield* Fiber.join(waiting)).reason).toBe("transport");
           reply = { json: { total: 0, items: [] } };
           yield* run(reader, search);
           expect([dam.spawns.length, dam.initializes()]).toEqual([2, 2]);
           expect(yield* Queue.take(dam.stopped)).toBe(0);
 
+          yield* Queue.clear(dam.received);
           reply = "hang";
           const hung = yield* run(reader, search).pipe(Effect.flip, Effect.forkChild);
-          yield* Queue.takeN(dam.received, 5);
+          yield* Queue.take(dam.received);
           yield* TestClock.adjust(DamLibrary.CALL_TIMEOUT);
           expect((yield* Fiber.join(hung)).reason).toBe("transport");
           reply = { json: { total: 0, items: [] } };
@@ -688,82 +701,103 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
   );
 });
 
-it.live("talks to a real DAM-shaped process and stops it with its scope", () =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const inherited = yield* HostProcess.Environment;
-    const root = yield* checkout(false);
-    const tsx = path.join(root, "node_modules", ".bin", "tsx");
-    yield* fs.makeDirectory(path.dirname(tsx), { recursive: true });
-    yield* fs.writeFileString(
-      tsx,
-      `#!/usr/bin/env node
-const path = require("node:path");
-const owner = process.argv.includes("--owner");
+// DAM's server stands in as plain ESM run by `node --import tsx`, the argv the library spawns.
+const FIXTURE_SERVER = `import path from "node:path";
+import { fileURLToPath } from "node:url";
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const args = process.argv.slice(2);
 const checks = [
-owner ? "owner" : "public",
-process.argv[2] === "scripts/mcp/server.ts" ? "argv" : "bad-argv",
-process.cwd() === path.resolve(__dirname, "../..") ? "cwd" : "bad-cwd",
-process.env.SYNTHOS_FIXTURE_SECRET === undefined ? "clean-env" : "leaked-env",
-"pid-" + process.pid,
+  args.length === 0 ? "public" : args.length === 1 && args[0] === "--owner" ? "owner" : "bad-argv",
+  process.cwd() === root ? "cwd" : "bad-cwd",
+  process.env.SYNTHOS_FIXTURE_SECRET === undefined ? "clean-env" : "leaked-env",
+  "pid-" + process.pid,
 ];
+const reply = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id, result }) + "\\n");
 let buffered = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
-buffered += chunk;
-for (let end = buffered.indexOf("\\n"); end !== -1; end = buffered.indexOf("\\n")) {
-  const message = JSON.parse(buffered.slice(0, end));
-  buffered = buffered.slice(end + 1);
-  if (message.id === undefined) continue;
-  const result = message.method === "initialize"
-    ? { protocolVersion: "2025-06-18", capabilities: {} }
-    : message.params.name === "get_principles"
-      ? { content: [{ type: "text", text: "Fixture · v1" }, { type: "text", text: "x".repeat(300000) }] }
-      : { content: [{ type: "text", text: JSON.stringify({ total: 1, items: [{ id: "fixture", title: "Fixture", kind: "react", category: null, summary: "", tags: checks, styles: [], patterns: [], licence: "MIT", formats: ["tsx"] }] }) }] };
-  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }) + "\\n");
-}
+  buffered += chunk;
+  for (let end = buffered.indexOf("\\n"); end !== -1; end = buffered.indexOf("\\n")) {
+    const message = JSON.parse(buffered.slice(0, end));
+    buffered = buffered.slice(end + 1);
+    if (message.id === undefined) continue;
+    if (message.method === "initialize") reply(message.id, { protocolVersion: "2025-06-18", capabilities: {} });
+    else if (message.params.arguments.id === "oversized") process.stdout.write("x".repeat(OVERSIZED) + "\\n");
+    else if (message.params.name === "get_principles")
+      reply(message.id, { content: [{ type: "text", text: "Fixture · v1" }, { type: "text", text: "x".repeat(300000) }] });
+    else
+      reply(message.id, { content: [{ type: "text", text: JSON.stringify({ total: 1, items: [{ id: "fixture", title: "Fixture", kind: "react", category: null, summary: "", tags: checks, styles: [], patterns: [], licence: "MIT", formats: ["tsx"] }] }) }] });
+  }
 });
 process.stderr.write("fixture ready\\n");
-`,
-    );
-    yield* fs.chmod(tsx, 0o755);
-    const tags = yield* Effect.gen(function* () {
-      const searched = yield* Effect.all(
-        [run(reader, { type: "library.search" }), run(fileReader, { type: "library.search" })],
-        { concurrency: "unbounded" },
+`;
+
+it.live(
+  "runs DAM as one real process, kills it on an over-long line and stops it with its scope",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const inherited = yield* HostProcess.Environment;
+      const root = yield* checkout();
+      yield* fs.writeFileString(path.join(root, "package.json"), '{"name":"dam","type":"module"}');
+      yield* fs.writeFileString(
+        path.join(root, "scripts", "mcp", "server.ts"),
+        FIXTURE_SERVER.replace("OVERSIZED", String(DamLibrary.MAX_MESSAGE_BYTES + 1)),
       );
-      const principle = yield* run(reader, { type: "library.principle", id: "fixture" });
-      expect(principle.library === "principle" && principle.text.length).toBe(300_000);
-      return searched.flatMap((result) =>
-        result.library === "search" ? [result.items[0]?.tags ?? []] : [],
-      );
-    }).pipe(
-      Effect.provide(
-        DamLibrary.layer.pipe(
-          Layer.provide(
-            Layer.succeed(ConnectionsConfig.ConnectionsConfig, {
-              agentMailKey: undefined,
-              memKey: undefined,
-              obsidianVaultRoot: undefined,
-              damRoot: root,
-              damOwner: true,
-            }),
+      const searchTags = (scopes: ReadonlyArray<AuthEnvironmentScope>) =>
+        run(scopes, { type: "library.search" }).pipe(
+          Effect.map((result) =>
+            result.library === "search" ? (result.items[0]?.tags ?? []) : [],
+          ),
+        );
+      const pidOf = (tags: ReadonlyArray<string>) =>
+        Number(tags.find((tag) => tag.startsWith("pid-"))?.slice("pid-".length));
+      const alive = (pid: number) => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      const pids = yield* Effect.gen(function* () {
+        const [publicTags, ownerTags] = yield* Effect.all(
+          [searchTags(reader), searchTags(fileReader)],
+          { concurrency: "unbounded" },
+        );
+        expect([publicTags.slice(0, 3), ownerTags.slice(0, 3)]).toEqual([
+          ["public", "cwd", "clean-env"],
+          ["owner", "cwd", "clean-env"],
+        ]);
+        const principle = yield* run(reader, { type: "library.principle", id: "fixture" });
+        expect(principle.library === "principle" && principle.text.length).toBe(300_000);
+        expect(yield* reasonOf(reader, { type: "library.principle", id: "oversized" })).toBe(
+          "response_too_large",
+        );
+        const restartedTags = yield* searchTags(reader);
+        expect(alive(pidOf(publicTags))).toBe(false);
+        expect(alive(pidOf(restartedTags))).toBe(true);
+        return [pidOf(restartedTags), pidOf(ownerTags)];
+      }).pipe(
+        Effect.provide(
+          DamLibrary.layer.pipe(
+            Layer.provide(
+              Layer.succeed(ConnectionsConfig.ConnectionsConfig, {
+                agentMailKey: undefined,
+                memKey: undefined,
+                obsidianVaultRoot: undefined,
+                damRoot: root,
+                damOwner: true,
+              }),
+            ),
           ),
         ),
-      ),
-      Effect.provideService(HostProcess.Environment, {
-        PATH: inherited.PATH,
-        SYNTHOS_FIXTURE_SECRET: "never-forward-this",
-      }),
-    );
-    expect(tags.map((checks) => checks.slice(0, 4))).toEqual([
-      ["public", "argv", "cwd", "clean-env"],
-      ["owner", "argv", "cwd", "clean-env"],
-    ]);
-    for (const checks of tags) {
-      const pid = Number(checks[4]?.slice("pid-".length));
-      expect(() => process.kill(pid, 0)).toThrow();
-    }
-  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+        Effect.provideService(HostProcess.Environment, {
+          PATH: inherited.PATH,
+          SYNTHOS_FIXTURE_SECRET: "never-forward-this",
+        }),
+      );
+      expect(pids.map(alive)).toEqual([false, false]);
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );

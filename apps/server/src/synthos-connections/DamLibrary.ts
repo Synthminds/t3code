@@ -49,14 +49,16 @@ interface DamConnection {
   ) => Effect.Effect<RpcResponse, SynthosConnectionError>;
 }
 
-export const CALL_TIMEOUT = Duration.seconds(20);
+export const CALL_TIMEOUT = Duration.seconds(10);
 const START_TIMEOUT = Duration.seconds(30);
+const FORCE_KILL_AFTER = Duration.seconds(2);
 export const IDLE_TIME_TO_LIVE = Duration.minutes(5);
-export const MAX_MESSAGE_BYTES = 4 * 1_048_576;
+// A cover preview is about 1.4 MiB of JSON (DAM's 1 MiB cap in base64); text files are smaller.
+export const MAX_MESSAGE_BYTES = 2 * 1_048_576;
 export const MAX_STDERR_BYTES = 262_144;
 const MCP_PROTOCOL_VERSION = "2025-06-18";
 const INVALID_PARAMS = -32_602;
-// PATH lets tsx's `#!/usr/bin/env node` resolve; the temp variables locate its compile cache.
+// PATH locates node; the temp variables locate tsx's compile cache.
 const FORWARDED_ENVIRONMENT = ["PATH", "TMPDIR", "TMP", "TEMP"] as const;
 const FILE_ROLES = [
   "cover",
@@ -270,6 +272,8 @@ function damToolErrorReason(message: string): Reason {
       return "response_too_large";
     case "STORAGE_ONLY":
       return "storage_only";
+    case "INTERNAL":
+      return "remote_rejected";
   }
   return /^No (?:asset|idea|principle document) /.test(message) ? "not_found" : "remote_rejected";
 }
@@ -370,7 +374,7 @@ const make = Effect.gen(function* () {
       yield* logIssue("DAM_ROOT_INVALID", mode);
       return yield* failure("unavailable");
     }
-    if (!(yield* isType(path.join(root, "node_modules", ".bin", "tsx"), "File"))) {
+    if (!(yield* isType(path.join(root, "node_modules", "tsx", "package.json"), "File"))) {
       yield* logIssue("DAM_DEPENDENCIES_MISSING", mode);
       return yield* failure("unavailable");
     }
@@ -399,7 +403,9 @@ const make = Effect.gen(function* () {
           discard: true,
         }).pipe(
           Effect.andThen(logIssue(code, mode)),
-          Effect.andThen(Effect.forkIn(Effect.ignore(handle.kill()), scope)),
+          Effect.andThen(
+            Effect.forkIn(Effect.ignore(handle.kill({ forceKillAfter: FORCE_KILL_AFTER })), scope),
+          ),
           Effect.asVoid,
         );
       });
@@ -512,17 +518,19 @@ const make = Effect.gen(function* () {
 
   const start = Effect.fn("DamLibrary.start")(function* (mode: Mode) {
     const root = yield* resolveRoot(mode);
+    // tsx's loader keeps DAM in one process (its CLI runs a child); the spawner signals the
+    // whole process group on release, SIGTERM then SIGKILL. DAM exits on unknown arguments.
     const handle = yield* spawner
       .spawn(
         ChildProcess.make(
-          path.join(root, "node_modules", ".bin", "tsx"),
-          ["scripts/mcp/server.ts", ...(mode === "owner" ? ["--owner"] : [])],
+          "node",
+          ["--import", "tsx", "scripts/mcp/server.ts", ...(mode === "owner" ? ["--owner"] : [])],
           {
             cwd: root,
             env: environment,
             extendEnv: false,
             shell: false,
-            forceKillAfter: Duration.seconds(2),
+            forceKillAfter: FORCE_KILL_AFTER,
           },
         ),
       )
