@@ -47,7 +47,12 @@ export function NightRidersScene(props: NightRidersSceneProps) {
     const host = hostRef.current;
     if (!host) return;
     let disposed = false;
-    const moduleUrl = `${import.meta.env.BASE_URL}synthos/night-riders-engine.js`;
+    // Keep this URL absolute. Vite dev appends ?import to root-relative import() URLs and
+    // refuses those requests for public/ files.
+    const moduleUrl = new URL(
+      `${import.meta.env.BASE_URL}synthos/night-riders-engine.js`,
+      document.baseURI,
+    ).href;
     void (import(/* @vite-ignore */ moduleUrl) as Promise<SceneModule>)
       .then(({ mountNightRiders }) => {
         if (disposed) return;
