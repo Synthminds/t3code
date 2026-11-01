@@ -13,6 +13,7 @@ import type {
 } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import ChatMarkdown from "~/components/ChatMarkdown";
+import { inertMarkdown } from "~/components/chat/inertMarkdown";
 import { writeTextToClipboard } from "../../hooks/useCopyToClipboard";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Badge } from "../ui/badge";
@@ -76,6 +77,7 @@ const FORMATS: Record<
   design: { label: "DESIGN.md", extension: ".design.md", type: "text/markdown" },
   framework: { label: "Tokens", extension: ".tokens.json", type: "application/json" },
 };
+const INERT_MARKDOWN = [inertMarkdown];
 const FAILURES: Record<string, string> = {
   unavailable: "The DAM library is not available on this host. Check its configuration.",
   forbidden: "This session cannot read the DAM library.",
@@ -1032,7 +1034,12 @@ function LibraryPrinciples({ environmentId }: { environmentId: EnvironmentId }) 
               )}
             </div>
             <div className="max-h-[560px] overflow-auto">
-              <ChatMarkdown text={detail.value.text} cwd={undefined} parseRawHtml={false} />
+              <ChatMarkdown
+                text={detail.value.text}
+                cwd={undefined}
+                parseRawHtml={false}
+                extraRemarkPlugins={INERT_MARKDOWN}
+              />
             </div>
           </div>
         )}

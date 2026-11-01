@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 import type { AuthEnvironmentScope } from "./auth.ts";
-import { NonNegativeInt, PositiveInt } from "./baseSchemas.ts";
+import { ForwardCompatibleArray, NonNegativeInt, PositiveInt } from "./baseSchemas.ts";
 
 const ShortText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
 const Content = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200_000));
@@ -454,7 +454,7 @@ export const SynthosMemNote = Schema.Struct({
 export type SynthosMemNote = typeof SynthosMemNote.Type;
 
 export const SynthosConnectionResult = Schema.Union([
-  Schema.Struct({ connections: Schema.Array(SynthosConnectionStatus) }),
+  Schema.Struct({ connections: ForwardCompatibleArray(SynthosConnectionStatus) }),
   SynthosNativeToolInventory,
   Schema.Struct({ probe: SynthosToolProbe }),
   Schema.Struct({

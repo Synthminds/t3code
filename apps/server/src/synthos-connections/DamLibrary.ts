@@ -1,6 +1,5 @@
 import {
   NonNegativeInt,
-  PositiveInt,
   SYNTHOS_LIBRARY_MAX_PREVIEW_BYTES,
   SYNTHOS_LIBRARY_MAX_TEXT_BYTES,
   SynthosConnectionError,
@@ -10,7 +9,7 @@ import {
   SynthosLibraryKind,
   SynthosLibraryPrincipleDocument,
   type AuthEnvironmentScope,
-  type SynthosLibraryAsset,
+  SynthosLibraryAsset,
   type SynthosLibraryCard,
   type SynthosLibraryCommand,
   type SynthosLibraryResult,
@@ -58,8 +57,16 @@ export const MAX_MESSAGE_BYTES = 2 * 1_048_576;
 export const MAX_STDERR_BYTES = 262_144;
 const MCP_PROTOCOL_VERSION = "2025-06-18";
 const INVALID_PARAMS = -32_602;
-// PATH locates node; the temp variables locate tsx's compile cache.
-const FORWARDED_ENVIRONMENT = ["PATH", "TMPDIR", "TMP", "TEMP"] as const;
+// PATH locates node, the temp variables tsx's compile cache; node needs SystemRoot on Windows.
+const FORWARDED_ENVIRONMENT = [
+  "PATH",
+  "Path",
+  "PATHEXT",
+  "SystemRoot",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+] as const;
 const FILE_ROLES = [
   "cover",
   "design",
@@ -184,32 +191,8 @@ const DamAsset = Schema.Struct({
       notes: List(Text(400), 12),
     }),
   ),
-  principles: Schema.optionalKey(
-    Schema.Struct({
-      doc: Id,
-      version: PositiveInt,
-      updated: Text(10),
-      count: NonNegativeInt,
-      appliesTo: List(Text(80), 12),
-      inherits: List(Id, 12),
-    }),
-  ),
-  upstream: Schema.optionalKey(
-    Schema.Struct({
-      note: Text(400),
-      summary: Schema.optionalKey(Text(10_000)),
-      adapt: Schema.optionalKey(
-        Schema.Struct({
-          useWhen: Text(400),
-          avoidWhen: Text(400),
-          prompt: Text(1_500),
-          editable: List(Text(200), 12),
-          preserve: List(Text(200), 12),
-          limitations: List(Text(300), 12),
-        }),
-      ),
-    }),
-  ),
+  principles: SynthosLibraryAsset.fields.principles,
+  upstream: SynthosLibraryAsset.fields.upstream,
 });
 type DamAsset = typeof DamAsset.Type;
 
@@ -617,12 +600,15 @@ const make = Effect.gen(function* () {
           const { type: _type, ...args } = command;
           const { texts } = yield* callTool(mode, "search_assets", args);
           const value = yield* decodeSearch(texts[0]).pipe(Effect.mapError(invalid));
+          // A public process that lists owner-only items is broken; its count is not trustworthy either.
+          if (mode === "public" && value.items.some((item) => item.access === "owner")) {
+            yield* logIssue("DAM_ACCESS_VIOLATION", mode);
+            return yield* failure("response_invalid");
+          }
           return {
             library: "search",
             total: value.total,
-            items: value.items
-              .filter((item) => mode === "owner" || item.access !== "owner")
-              .map((item) => toCard(item, mode)),
+            items: value.items.map((item) => toCard(item, mode)),
           };
         }
         case "library.asset":
@@ -644,6 +630,7 @@ const make = Effect.gen(function* () {
           };
         }
         case "library.preview": {
+          if (mode === "public") yield* readAsset(mode, command.id);
           const { texts, content } = yield* callTool(mode, "get_asset_preview", { id: command.id });
           const meta = yield* decodePreview(texts[0]).pipe(Effect.mapError(invalid));
           const image = content.find((block) => block.type === "image");

@@ -309,7 +309,7 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("never returns items DAM marks owner-only to a public session", () =>
+  it.effect("fails closed when the public process returns an item DAM marks owner-only", () =>
     Effect.gen(function* () {
       const root = yield* checkout();
       const dam = yield* fakeDam(({ tool }) =>
@@ -320,18 +320,23 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
                 items: [card("public.button"), card("leaked.original", { access: "owner" })],
               },
             }
-          : { json: asset({ access: "owner" }) },
+          : tool === "get_asset_preview"
+            ? preview(png, "image/png")
+            : { json: asset({ access: "owner" }) },
       );
       yield* Effect.gen(function* () {
-        const result = yield* run(reader, { type: "library.search" });
-        expect(result.library === "search" && result.items.map((item) => item.id)).toEqual([
-          "public.button",
-        ]);
+        expect(yield* reasonOf(reader, { type: "library.search" })).toBe("response_invalid");
         for (const command of [
           { type: "library.asset", id: "leaked.original" },
           { type: "library.file", id: "leaked.original", format: "tsx" },
+          { type: "library.preview", id: "leaked.original" },
         ] as const)
           expect(yield* reasonOf(reader, command)).toBe("not_found");
+        const owner = yield* run(fileReader, { type: "library.search" });
+        expect(owner.library === "search" && owner.items.map((item) => item.id)).toEqual([
+          "public.button",
+          "leaked.original",
+        ]);
       }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner: true })));
     }).pipe(Effect.scoped),
   );
@@ -339,7 +344,6 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
   it.effect("spawns DAM's own server without a shell or SynthOS credentials", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
       const root = yield* checkout(false);
       const dam = yield* fakeDam(() => ({ json: { total: 0, items: [] } }));
       yield* Effect.gen(function* () {
@@ -401,9 +405,9 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
       ] as const;
       let message = "";
       const dam = yield* fakeDam(({ tool }) =>
-        tool === "get_asset_preview"
-          ? { rpcError: -32_602 }
-          : tool === "list_ideas"
+        tool === "get_asset"
+          ? { json: asset() }
+          : tool === "get_asset_preview" || tool === "list_ideas"
             ? { rpcError: -32_602 }
             : { toolError: message },
       );

@@ -1,33 +1,15 @@
 /* oxlint-disable react/no-array-index-key -- Notebook cells and outputs retain their saved source order. */
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { useEffect, useRef, useState } from "react";
-import type { Root, RootContent } from "mdast";
 import ChatMarkdown from "~/components/ChatMarkdown";
+import { inertMarkdown } from "~/components/chat/inertMarkdown";
 import { Button } from "~/components/ui/button";
 import ReadOnlySourcePreview from "./ReadOnlySourcePreview";
 import DocumentPages from "./DocumentPages";
 import { FileSurfaceNotice } from "./fileSurfaceChrome";
 import type { OfficeWorkerResult } from "./officePreviewProtocol";
 
-// Saved notebooks must not load URLs or turn authored links into app actions.
-function inertNotebookMarkdown() {
-  function clean(nodes: RootContent[]): RootContent[] {
-    return nodes.flatMap((node): RootContent[] => {
-      if (node.type === "html" || node.type === "definition") return [];
-      if (node.type === "image" || node.type === "imageReference")
-        return [{ type: "text", value: node.alt ?? "" }];
-      if (node.type === "link" || node.type === "linkReference") return clean(node.children);
-      if (node.type === "inlineCode") return [{ type: "text", value: node.value }];
-      if (node.type === "code" && node.lang === "mermaid") return [{ ...node, lang: "text" }];
-      if ("children" in node) node.children = clean(node.children) as typeof node.children;
-      return [node];
-    });
-  }
-  return (tree: Root) => {
-    tree.children = clean(tree.children) as Root["children"];
-  };
-}
-const NOTEBOOK_PLUGINS = [inertNotebookMarkdown];
+const NOTEBOOK_PLUGINS = [inertMarkdown];
 
 function NotebookSource(props: { readonly name: string; readonly text: string }) {
   const [height, setHeight] = useState(Math.min(360, props.text.split("\n").length * 20 + 16));
