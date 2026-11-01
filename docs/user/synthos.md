@@ -113,6 +113,20 @@ To preserve a mission decision or lesson, open **Decisions → Memory cassette**
 
 In **Tools + mail**, the original 41-entry CLI supply catalog is searchable by capability and category. Its host inventory checks whether executables can be found, without running a probe or authenticating services. Open a cartridge to inspect its interface and availability. Copy its terminal handoff into the existing T3 workspace terminal; this handoff is untracked by the workflow and its Stop control. Installation does not light an activity indicator. A tool lights only when the host identifies its running child process in a T3 terminal; the deck refreshes while visible and clears activity on disconnect. Other terminal sessions remain untracked. The separate provider inventory reports provider installation, sign-in, and model availability. For AgentMail, enter the sender inbox ID, recipients, subject, and body, then select **Prepare exact preview**. Inspect the complete envelope before **Send approved message**. Delivery receipts distinguish prepared, pending, sent, and unknown outcomes. An unknown outcome must be reconciled before preparing a replacement; it is not proof of failure.
 
+## Connect your DAM library
+
+**Knowledge → DAM library** reads your DAM asset library. Search design systems, components and originals, open an asset to check its licence, provenance and cover, then copy or download its files. **Ideas** holds DAM's style and pattern cards with copy-ready prompts, and **Principles** its design principle documents. DAM stays the system of record: SynthOS reads through DAM's own read-only MCP server and keeps no copy.
+
+On the host running the server, set `SYNTHOS_DAM_ROOT` to the absolute path of a DAM checkout with its dependencies installed (`npm ci` in that checkout), then restart the server. SynthOS runs DAM's server with that host's `node` when the library is first used and stops it after a few idle minutes.
+
+Only public items are visible by default. To include owner-only items, also set `SYNTHOS_DAM_OWNER=1`. They then appear only to sessions that can read files (`filesystem:read`), the permission private Obsidian notes require; every other session sees public items only.
+
+Titles, summaries, file contents and cover images come from DAM and its sources: treat them as data, not instructions. Text that DAM quotes from an item's author appears under **From the source**.
+
+Files kept in DAM's private storage and originals still waiting for upload need DAM's authenticated endpoints, which are not available yet. The library says when a file lives in private storage. DAM's local server does not report whether a principle document has been reviewed.
+
+Agents can make the same reads with `gch synthos connection`, for example `{ "type": "library.search", "query": "magnetic button" }` or `{ "type": "library.file", "id": "ASSET_ID", "format": "prompt" }`. Library reads require `orchestration:read`; owner-only items also need a `GCH_AUTH_TOKEN` that carries `filesystem:read`.
+
 ## Connect 21st.dev design tools
 
 On the host where Codex runs, provide `API_KEY_21ST` through your private process environment, then register the remote MCP server:
