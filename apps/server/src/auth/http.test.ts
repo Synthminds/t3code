@@ -10,6 +10,7 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Etag from "effect/http/Etag";
@@ -17,6 +18,7 @@ import * as HttpPlatform from "effect/http/HttpPlatform";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpRouter from "effect/http/HttpRouter";
+import * as HttpServerRequest from "effect/http/HttpServerRequest";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -154,4 +156,30 @@ it.effect("sets the selected browser session cookies through the HTTP route", ()
         Effect.promise(() => Promise.all([environmentA.dispose(), environmentB.dispose()])),
     );
   }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("logs a failed request as a warning but not one its client aborted", () =>
+  Effect.gen(function* () {
+    const warnings: Array<unknown> = [];
+    const logger = Logger.make(({ logLevel, message }) => {
+      if (logLevel === "Warn") warnings.push(message);
+    });
+    const request = HttpServerRequest.fromWeb(
+      new Request("http://127.0.0.1/api/synthos/connections", { method: "POST" }),
+    );
+    const handle = (outcome: Effect.Effect<void, string>) =>
+      Effect.scoped(
+        AuthHttp.annotateEnvironmentRequest("synthos.connections").pipe(Effect.andThen(outcome)),
+      ).pipe(
+        Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+        Effect.provide(Logger.layer([logger], { mergeWithExisting: false })),
+        Effect.exit,
+      );
+    // An aborted request reaches the handler as an interrupt.
+    yield* handle(Effect.interrupt);
+    expect(warnings).toEqual([]);
+    yield* handle(Effect.fail("storage unreachable"));
+    expect(warnings).toHaveLength(1);
+    expect(JSON.stringify(warnings[0])).toContain("environment api request failed");
+  }),
 );
