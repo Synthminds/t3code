@@ -1004,6 +1004,35 @@ describe("executeAtomQuery", () => {
 });
 
 describe("runtime command runner", () => {
+  it.effect("interrupts a command's work when its caller aborts", () => {
+    // The caller is a plain browser abort, outside Effect.
+    const controller = new AbortController();
+    return Effect.gen(function* () {
+      const started = Latch.makeUnsafe();
+      const interrupted = Latch.makeUnsafe();
+      const runtime = Atom.runtime(Layer.empty);
+      const command = createRuntimeCommand(runtime, {
+        label: "test.abortable",
+        execute: () =>
+          started.open.pipe(
+            Effect.andThen(Effect.never),
+            Effect.onInterrupt(() => interrupted.open),
+          ),
+      });
+      const registry = AtomRegistry.make();
+
+      const running = command.run(registry, undefined, { signal: controller.signal });
+      yield* started.await;
+      controller.abort();
+
+      const result = yield* Effect.promise(() => running);
+      expect(result._tag === "Failure" && Cause.hasInterruptsOnly(result.cause)).toBe(true);
+      // The work itself stops, not only the caller's wait: an HTTP request would be cancelled.
+      yield* interrupted.await;
+      registry.dispose();
+    });
+  });
+
   it("settles generated command scheduler defects from direct callers", async () => {
     const defect = new Error("invalid command key");
     const runtime = Atom.runtime(Layer.empty);

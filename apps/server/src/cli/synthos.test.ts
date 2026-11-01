@@ -407,6 +407,12 @@ describe("SynthOS CLI authenticated transport", () => {
           styles: [{ id: "neon-glow", label: "Neon glow", definition: "Glow.", count: 3 }],
           patterns: [],
         };
+        const libraryStatus = {
+          library: "status",
+          state: "configured",
+          capabilities: ["library.search"],
+          reason: "DAM checkout configured.",
+        };
         const client = HttpClient.make((request) => {
           assert.equal(new URL(request.url).pathname, "/api/synthos/connections");
           assert.equal(request.method, "POST");
@@ -422,7 +428,9 @@ describe("SynthOS CLI authenticated transport", () => {
                   ? libraryFile
                   : (body as { type: string }).type === "library.facets"
                     ? libraryFacets
-                    : { path: "note.md", content: "saved", version: "hash" },
+                    : (body as { type: string }).type === "library.status"
+                      ? libraryStatus
+                      : { path: "note.md", content: "saved", version: "hash" },
               ),
             ),
           );
@@ -437,6 +445,7 @@ describe("SynthOS CLI authenticated transport", () => {
           },
           { type: "library.file", id: "subframe-motion.magnetic-button", format: "prompt" },
           { type: "library.facets" },
+          { type: "library.status" },
         ];
         const results: unknown[] = [];
         for (const input of commands)
@@ -449,13 +458,15 @@ describe("SynthOS CLI authenticated transport", () => {
         assert.deepEqual(calls, [...commands]);
         assert.deepEqual(results[2], libraryFile);
         assert.deepEqual(results[3], libraryFacets);
+        assert.deepEqual(results[4], libraryStatus);
         assert.deepEqual(auth.issuedScopes, [
           ["filesystem:read"],
           ["filesystem:write"],
           [AuthOrchestrationReadScope],
           [AuthOrchestrationReadScope],
+          [AuthOrchestrationReadScope],
         ]);
-        assert.deepEqual(auth.revoked, [sessionId, sessionId, sessionId, sessionId]);
+        assert.deepEqual(auth.revoked, [sessionId, sessionId, sessionId, sessionId, sessionId]);
       }),
   );
 

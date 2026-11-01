@@ -2,7 +2,7 @@ import { pipe } from "effect/Function";
 import type { DesktopBridge } from "@t3tools/contracts";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import * as Schema from "effect/Schema";
-import { useSyncExternalStore } from "react";
+import { createContext, use, useSyncExternalStore } from "react";
 import {
   applyThemePalette,
   CUSTOM_THEMES_STORAGE_KEY,
@@ -506,14 +506,18 @@ export function getRenderedAppearance(): ThemeAppearance {
   return getThemePreviewAppearance() ?? getSnapshot().resolvedTheme;
 }
 
+// A subtree drawn in one appearance whatever the app's (the SynthOS cockpit is always dark).
+export const RenderedAppearanceOverride = createContext<ThemeAppearance | null>(null);
+
 export function useRenderedAppearance() {
+  const override = use(RenderedAppearanceOverride);
   const { resolvedTheme } = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const previewAppearance = useSyncExternalStore(
     subscribeToThemePreview,
     getThemePreviewAppearance,
     () => null,
   );
-  return previewAppearance ?? resolvedTheme;
+  return override ?? previewAppearance ?? resolvedTheme;
 }
 
 export function setTheme(next: Theme): boolean {

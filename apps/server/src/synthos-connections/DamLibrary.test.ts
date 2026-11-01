@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import type * as Cause from "effect/Cause";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -162,7 +163,10 @@ const installDependencies = Effect.fn("test.installDependencies")(function* (roo
 
 const libraryLayer = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
-  config: { readonly damRoot: string; readonly damOwner?: boolean },
+  config: {
+    readonly damRoot: string | undefined;
+    readonly damOwner?: ConnectionsConfig.DamOwnerSetting;
+  },
 ) =>
   DamLibrary.layer.pipe(
     Layer.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner)),
@@ -172,7 +176,7 @@ const libraryLayer = (
         memKey: undefined,
         obsidianVaultRoot: undefined,
         damRoot: config.damRoot,
-        damOwner: config.damOwner ? "on" : "off",
+        damOwner: config.damOwner ?? "off",
       }),
     ),
   );
@@ -338,11 +342,13 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
           publicArgs,
           [...publicArgs, "--owner"],
         ]);
-      }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner: true })));
-      yield* Effect.gen(function* () {
-        expect(yield* searchIds(fileReader)).toEqual(["public.button:public"]);
-        expect(dam.spawns.at(-1)?.args).toEqual(publicArgs);
-      }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner: false })));
+      }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner: "on" })));
+      for (const damOwner of ["off", "unrecognized"] as const)
+        yield* Effect.gen(function* () {
+          expect(yield* searchIds(fileReader)).toEqual(["public.button:public"]);
+          expect(dam.spawns.at(-1)?.args).toEqual(publicArgs);
+        }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner })));
+      expect(dam.spawns.filter((command) => command.args.includes("--owner"))).toHaveLength(1);
     }).pipe(Effect.scoped),
   );
 
@@ -379,7 +385,7 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
           "public.button",
           "leaked.original",
         ]);
-      }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner: true })));
+      }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner: "on" })));
     }).pipe(Effect.scoped),
   );
 
@@ -396,6 +402,7 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
           library: "search",
           total: 0,
           items: [],
+          dropped: 0,
         });
       }).pipe(
         Effect.provide(libraryLayer(dam.spawner, { damRoot: root })),
@@ -494,7 +501,12 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
                   })
                 : args.id === "edge"
                   ? edgeAsset()
-                  : asset(),
+                  : args.id === "derived.unverified"
+                    ? asset({
+                        licence: { ...asset().licence, status: "unverified" },
+                        framework: { ...asset().framework, status: "derived" },
+                      })
+                    : asset(),
           };
         if (tool === "list_facets")
           return {
@@ -664,7 +676,16 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
           styles: [{ id: "neon-glow", count: 3 }],
           patterns: [{ id: "skeleton-loaders", group: "component", count: 2 }],
         });
-      }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner: true })));
+        // Retrieval carries the item's own statuses, not defaults.
+        const derived = { type: "library.file", id: "derived.unverified", format: "tsx" } as const;
+        expect(yield* run(fileReader, derived)).toMatchObject({
+          licence: { status: "unverified" },
+          framework: { status: "derived" },
+        });
+        expect(
+          yield* run(fileReader, { type: "library.preview", id: "derived.unverified" }),
+        ).toMatchObject({ licence: { status: "unverified" } });
+      }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner: "on" })));
     }).pipe(Effect.scoped),
   );
 
@@ -766,6 +787,7 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
           library: "search",
           total: 3,
           items: [{ id: "fine" }],
+          dropped: 2,
         });
         reply = replies.facets!;
         expect(yield* run(reader, { type: "library.facets" })).toMatchObject({
@@ -856,6 +878,33 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
       }).pipe(Effect.scoped),
   );
 
+  it.effect("reports its status from configuration alone, without starting DAM", () =>
+    Effect.gen(function* () {
+      const root = yield* checkout();
+      const dam = yield* fakeDam(() => ({ json: { total: 0, items: [] } }));
+      const statusFor = (
+        damRoot: string | undefined,
+        damOwner: ConnectionsConfig.DamOwnerSetting,
+      ) =>
+        run(reader, { type: "library.status" }).pipe(
+          Effect.provide(libraryLayer(dam.spawner, { damRoot, damOwner })),
+        );
+      const unconfigured = yield* statusFor(undefined, "on");
+      expect(unconfigured).toMatchObject({ library: "status", state: "unavailable" });
+      expect(yield* statusFor(root, "on")).toMatchObject({
+        state: "configured",
+        reason: expect.stringContaining("Owner-only items are on"),
+      });
+      const unrecognized = yield* statusFor(root, "unrecognized");
+      expect(unrecognized).toMatchObject({
+        state: "configured",
+        reason: expect.stringContaining("SYNTHOS_DAM_OWNER has a value SynthOS does not recognize"),
+      });
+      expect([unconfigured, unrecognized].every(isResult)).toBe(true);
+      expect(dam.spawns).toHaveLength(0);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("stops a DAM process for a stderr flood, not for a long uptime", () =>
     Effect.gen(function* () {
       const root = yield* checkout();
@@ -864,9 +913,10 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
       const search = { type: "library.search" } as const;
       yield* Effect.gen(function* () {
         // Over the budget in total, under it in every window: the process keeps serving.
+        const apart = Duration.sum(DamLibrary.STDERR_WINDOW, Duration.millis(200));
         for (let window = 0; window < 3; window += 1) {
           yield* run(reader, search);
-          yield* TestClock.adjust(DamLibrary.STDERR_WINDOW);
+          yield* TestClock.adjust(apart);
         }
         yield* run(reader, search);
         expect(dam.spawns).toHaveLength(1);
@@ -877,6 +927,20 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
         expect(dam.spawns).toHaveLength(2);
       }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root })));
     }).pipe(Effect.scoped),
+  );
+
+  it.effect("holds every ten-second span of stderr to the budget, across any boundary", () =>
+    Effect.gen(function* () {
+      const kibibytes = (count: number) => count * 1_024;
+      const overBudget = DamLibrary.makeStderrBudget();
+      // After 10 s of quiet: 50 KiB, then 200 KiB 9.3 s later and 200 KiB 1 s after that.
+      yield* TestClock.adjust(DamLibrary.STDERR_WINDOW);
+      expect(yield* overBudget(kibibytes(50))).toBe(false);
+      yield* TestClock.adjust(Duration.millis(9_300));
+      expect(yield* overBudget(kibibytes(200))).toBe(false);
+      yield* TestClock.adjust(Duration.seconds(1));
+      expect(yield* overBudget(kibibytes(200))).toBe(true);
+    }),
   );
 
   it.effect("stops a DAM that never finishes starting and starts a fresh one", () =>
