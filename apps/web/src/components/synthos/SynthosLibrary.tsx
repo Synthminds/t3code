@@ -20,12 +20,14 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { libraryFailureMessage } from "./synthosLibraryFailure";
 import { synthosRequest } from "./synthosRequest";
 
 type Answer<C extends SynthosLibraryCommand> = Extract<
   SynthosLibraryResult,
   { library: C["type"] extends `library.${infer Library}` ? Library : never }
 >;
+type Facets = Answer<{ type: "library.facets" }>;
 type Settled<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly error: unknown };
@@ -78,18 +80,6 @@ const FORMATS: Record<
   framework: { label: "Tokens", extension: ".tokens.json", type: "application/json" },
 };
 const INERT_MARKDOWN = [inertMarkdown];
-const FAILURES: Record<string, string> = {
-  unavailable: "The DAM library is not available on this host. Check its configuration.",
-  forbidden: "This session cannot read the DAM library.",
-  not_found: "This item is not in the library, or this session cannot see it.",
-  invalid_input: "DAM rejected the request. Check the search filters.",
-  response_invalid: "DAM answered in a form this version of SynthOS cannot read.",
-  response_too_large: "This item is too large to show here.",
-  remote_rejected: "DAM could not answer this request.",
-  transport: "DAM did not answer. Try again.",
-  storage_only:
-    "This file lives in DAM's private storage. Retrieve it through DAM's authenticated file route.",
-};
 
 function library<C extends SynthosLibraryCommand>(
   environmentId: EnvironmentId,
@@ -110,13 +100,6 @@ function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
   );
 }
 
-function failureMessage(error: unknown): string {
-  const reason =
-    typeof error === "object" && error !== null && "reason" in error ? error.reason : undefined;
-  if (typeof reason === "string" && Object.hasOwn(FAILURES, reason)) return FAILURES[reason]!;
-  return error instanceof Error ? error.message : "The library request failed. Try again.";
-}
-
 function download(text: string, name: string, type: string) {
   // Blob downloads keep desktop's custom app scheme from navigating to an external browser.
   const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
@@ -130,13 +113,16 @@ function download(text: string, name: string, type: string) {
 export function SynthosLibrary({
   environmentId,
   statuses,
+  statusError,
 }: {
   environmentId: EnvironmentId | null;
   statuses: readonly SynthosConnectionStatus[];
+  statusError: string | null;
 }) {
   const [view, setView] = useState<View>("assets");
   const [visited, setVisited] = useState<ReadonlySet<View>>(() => new Set(["assets"]));
   const status = statuses.find((item) => item.id === "dam");
+  const statusFailed = statusError !== null && statuses.length === 0;
   return (
     <section className="mt-10" aria-labelledby="sx-library-heading">
       <div className="sx-section-heading">
@@ -152,13 +138,15 @@ export function SynthosLibrary({
             <h3>Library connection</h3>
             <span>{status?.state.toUpperCase() ?? "UNAVAILABLE"}</span>
           </header>
-          <p className="sx-empty">
+          <p className={statusFailed ? "sx-error m-4" : "sx-empty"}>
             {environmentId === null
               ? "Connect an environment to load its library."
-              : statuses.length === 0
-                ? "Loading this host's connections…"
-                : (status?.reason ??
-                  "This host does not offer a DAM library connection. Update its server to use one.")}
+              : statusFailed
+                ? "This host's connections could not be loaded, so the library is unavailable."
+                : statuses.length === 0
+                  ? "Loading this host's connections…"
+                  : (status?.reason ??
+                    "This host does not offer a DAM library connection. Update its server to use one.")}
           </p>
         </section>
       ) : (
@@ -209,13 +197,16 @@ function Badges({
   licence: { readonly status: SynthosLibraryCard["licence"]["status"] };
   frameworkStatus: SynthosLibraryCard["frameworkStatus"];
 }) {
-  if (access !== "owner" && licence.status !== "unverified" && frameworkStatus !== "derived")
+  if (access !== "owner" && licence.status === "verified" && frameworkStatus !== "derived")
     return null;
   return (
     <div className="flex flex-wrap gap-1.5">
       {access === "owner" && <Badge variant="info">Owner only</Badge>}
       {licence.status === "unverified" && <Badge variant="warning">Licence unverified</Badge>}
-      {frameworkStatus === "derived" && <Badge variant="outline">Derived tokens</Badge>}
+      {licence.status === "unknown" && <Badge variant="warning">Licence status unknown</Badge>}
+      {frameworkStatus === "derived" && (
+        <Badge variant="outline">Tokens derived, not reviewed</Badge>
+      )}
     </div>
   );
 }
@@ -284,15 +275,74 @@ function Heading({ children }: { children: ReactNode }) {
   return <h4 className="m-0 font-semibold text-2xs">{children}</h4>;
 }
 
+function facetItems(all: string, facets: Facets["styles"] | Facets["patterns"]) {
+  return {
+    all,
+    ...Object.fromEntries(facets.map((facet) => [facet.id, `${facet.label} (${facet.count})`])),
+  };
+}
+
+function FacetSelect({
+  label,
+  value,
+  items,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  items: Record<string, string>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Select
+      value={value}
+      items={items}
+      onValueChange={(next) => {
+        if (next !== null) onChange(next);
+      }}
+    >
+      <SelectTrigger size="sm" aria-label={label}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectPopup>
+        {Object.entries(items).map(([id, text]) => (
+          <SelectItem key={id} value={id}>
+            {text}
+          </SelectItem>
+        ))}
+      </SelectPopup>
+    </Select>
+  );
+}
+
 function LibraryAssets({ environmentId }: { environmentId: EnvironmentId }) {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<SynthosLibraryKind | "all">("all");
+  const [style, setStyle] = useState("all");
+  const [pattern, setPattern] = useState("all");
+  const [facets, setFacets] = useState<Detail<Facets>>({ state: "loading" });
   const [results, setResults] = useState<Answer<{ type: "library.search" }> | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail<SynthosLibraryAsset>>({ state: "idle" });
   const sequence = useRef(0);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- load the style and pattern lists from the selected host once, and abort on unmount
+  useEffect(() => {
+    const controller = new AbortController();
+    void settle(library(environmentId, { type: "library.facets" }, controller.signal)).then(
+      (outcome) => {
+        if (controller.signal.aborted) return;
+        setFacets(
+          outcome.ok
+            ? { state: "ready", value: outcome.value }
+            : { state: "error", message: libraryFailureMessage(outcome.error) },
+        );
+      },
+    );
+    return () => controller.abort();
+  }, [environmentId]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounce DAM searches and abort superseded ones
   useEffect(() => {
@@ -308,13 +358,15 @@ function LibraryAssets({ environmentId }: { environmentId: EnvironmentId }) {
             limit: 50,
             ...(terms ? { query: terms } : {}),
             ...(kind === "all" ? {} : { kind }),
+            ...(style === "all" ? {} : { style }),
+            ...(pattern === "all" ? {} : { pattern }),
           },
           controller.signal,
         ),
       ).then((outcome) => {
         if (controller.signal.aborted) return;
         setSearching(false);
-        setSearchError(outcome.ok ? null : failureMessage(outcome.error));
+        setSearchError(outcome.ok ? null : libraryFailureMessage(outcome.error));
         if (outcome.ok) setResults(outcome.value);
       });
     }, SEARCH_DELAY_MS);
@@ -322,7 +374,7 @@ function LibraryAssets({ environmentId }: { environmentId: EnvironmentId }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [environmentId, query, kind]);
+  }, [environmentId, query, kind, style, pattern]);
 
   async function open(id: string) {
     const request = ++sequence.current;
@@ -333,7 +385,7 @@ function LibraryAssets({ environmentId }: { environmentId: EnvironmentId }) {
     setDetail(
       outcome.ok
         ? { state: "ready", value: outcome.value }
-        : { state: "error", message: failureMessage(outcome.error) },
+        : { state: "error", message: libraryFailureMessage(outcome.error) },
     );
   }
 
@@ -372,6 +424,25 @@ function LibraryAssets({ environmentId }: { environmentId: EnvironmentId }) {
               ))}
             </SelectPopup>
           </Select>
+          {facets.state === "ready" && (
+            <>
+              <FacetSelect
+                label="Style"
+                value={style}
+                items={facetItems("All styles", facets.value.styles)}
+                onChange={setStyle}
+              />
+              <FacetSelect
+                label="Pattern"
+                value={pattern}
+                items={facetItems("All patterns", facets.value.patterns)}
+                onChange={setPattern}
+              />
+            </>
+          )}
+          {facets.state === "error" && searchError === null && (
+            <p className="sx-muted">Style and pattern filters are unavailable. {facets.message}</p>
+          )}
           {searching && (
             <p className="sx-muted" role="status">
               Searching the library…
@@ -401,7 +472,7 @@ function LibraryAssets({ environmentId }: { environmentId: EnvironmentId }) {
             </Row>
           ))}
           {results?.items.length === 0 && (
-            <p className="sx-empty">No assets matched. Try fewer words or another kind.</p>
+            <p className="sx-empty">No assets matched. Try fewer words or other filters.</p>
           )}
           {results !== null && results.total > results.items.length && (
             <p className="sx-panel-note">
@@ -472,13 +543,14 @@ function AssetDetail({
               state: "ready",
               value: `data:${outcome.value.mediaType};base64,${outcome.value.data}`,
             }
-          : { state: "error", message: failureMessage(outcome.error) },
+          : { state: "error", message: libraryFailureMessage(outcome.error) },
       );
     });
     return () => controller.abort();
   }, [environmentId, asset.id, coverLocation]);
 
   async function retrieve(format: SynthosLibraryFormat, action: "copy" | "download") {
+    if (busy !== null) return;
     setBusy(format);
     setNotice(null);
     const cached = files[format];
@@ -487,7 +559,7 @@ function AssetDetail({
       : await settle(library(environmentId, { type: "library.file", id: asset.id, format }));
     setBusy(null);
     if (!outcome.ok) {
-      setNotice({ alert: true, text: failureMessage(outcome.error) });
+      setNotice({ alert: true, text: libraryFailureMessage(outcome.error) });
       return;
     }
     const file = outcome.value;
@@ -656,7 +728,7 @@ function AssetDetail({
                 <Button
                   variant="outline"
                   size="xs"
-                  disabled={busy !== null}
+                  aria-disabled={busy !== null || undefined}
                   onClick={() => void retrieve(format, "copy")}
                 >
                   <Copy aria-hidden /> Copy
@@ -664,7 +736,7 @@ function AssetDetail({
                 <Button
                   variant="outline"
                   size="xs"
-                  disabled={busy !== null}
+                  aria-disabled={busy !== null || undefined}
                   onClick={() => void retrieve(format, "download")}
                 >
                   <Download aria-hidden /> Download
@@ -726,7 +798,7 @@ function LibraryIdeas({ environmentId }: { environmentId: EnvironmentId }) {
       ).then((outcome) => {
         if (controller.signal.aborted) return;
         setLoadingList(false);
-        setListError(outcome.ok ? null : failureMessage(outcome.error));
+        setListError(outcome.ok ? null : libraryFailureMessage(outcome.error));
         if (outcome.ok) setIdeas(outcome.value.ideas);
       });
     }, SEARCH_DELAY_MS);
@@ -745,7 +817,7 @@ function LibraryIdeas({ environmentId }: { environmentId: EnvironmentId }) {
     setDetail(
       outcome.ok
         ? { state: "ready", value: outcome.value }
-        : { state: "error", message: failureMessage(outcome.error) },
+        : { state: "error", message: libraryFailureMessage(outcome.error) },
     );
   }
 
@@ -924,7 +996,7 @@ function LibraryPrinciples({ environmentId }: { environmentId: EnvironmentId }) 
         setDocuments(
           outcome.ok
             ? { state: "ready", value: outcome.value.documents }
-            : { state: "error", message: failureMessage(outcome.error) },
+            : { state: "error", message: libraryFailureMessage(outcome.error) },
         );
       },
     );
@@ -940,7 +1012,7 @@ function LibraryPrinciples({ environmentId }: { environmentId: EnvironmentId }) 
     setDetail(
       outcome.ok
         ? { state: "ready", value: outcome.value }
-        : { state: "error", message: failureMessage(outcome.error) },
+        : { state: "error", message: libraryFailureMessage(outcome.error) },
     );
   }
 

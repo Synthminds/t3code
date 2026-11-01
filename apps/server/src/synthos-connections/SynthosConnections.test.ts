@@ -41,7 +41,7 @@ const configured = {
   memKey: Redacted.make("test-mem-secret"),
   obsidianVaultRoot: undefined,
   damRoot: undefined,
-  damOwner: false,
+  damOwner: "off" as const,
 };
 
 function fixture(
@@ -137,7 +137,7 @@ describe("SynthosConnections", () => {
             memKey: undefined,
             obsidianVaultRoot: undefined,
             damRoot: undefined,
-            damOwner: false,
+            damOwner: "off",
           },
         ),
       ),

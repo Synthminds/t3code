@@ -83,7 +83,8 @@ export const SynthosToolProbeStatus = Schema.Struct({
 });
 export type SynthosToolProbeStatus = typeof SynthosToolProbeStatus.Type;
 
-// DAM is the library's system of record; these bounds mirror its manifest limits.
+// DAM is the library's system of record. Field bounds follow its manifest limits (DAM's
+// src/lib/collection/model.ts); file text and covers get a 1 MiB ceiling, above DAM's own caps.
 const LibraryText = (maxLength: number) => Schema.String.check(Schema.isMaxLength(maxLength));
 const LibraryId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80));
 const LibraryQuery = Schema.String.check(Schema.isMaxLength(200));
@@ -124,6 +125,7 @@ export const SynthosLibraryCommand = Schema.Union([
     pattern: Schema.optionalKey(LibraryId),
     limit: Schema.optionalKey(Limit),
   }),
+  Schema.Struct({ type: Schema.Literal("library.facets") }),
   Schema.Struct({ type: Schema.Literal("library.asset"), id: LibraryId }),
   Schema.Struct({
     type: Schema.Literal("library.file"),
@@ -140,7 +142,7 @@ export const SynthosLibraryCommand = Schema.Union([
   Schema.Struct({ type: Schema.Literal("library.principles") }),
   Schema.Struct({
     type: Schema.Literal("library.principle"),
-    id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(40)),
+    id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(41)),
   }),
 ]);
 export type SynthosLibraryCommand = typeof SynthosLibraryCommand.Type;
@@ -181,7 +183,8 @@ export const SynthosLibraryAsset = Schema.Struct({
     name: LibraryText(120),
     holder: LibraryText(200),
     status: LibraryLicenceStatus,
-    notes: LibraryList(LibraryText(400), 50),
+    // DAM sets no count limit on licence notes; 200 is a generous ceiling.
+    notes: LibraryList(LibraryText(400), 200),
   }),
   provenance: Schema.Struct({
     label: LibraryText(200),
@@ -208,12 +211,12 @@ export const SynthosLibraryAsset = Schema.Struct({
   component: Schema.optionalKey(
     Schema.Struct({
       format: Schema.Literals(["react", "html"]),
-      fileName: LibraryText(80),
+      fileName: LibraryText(84),
       exportName: Schema.NullOr(LibraryText(80)),
       install: Schema.NullOr(LibraryText(3_000)),
       runtime: LibraryText(120),
       packages: LibraryList(
-        Schema.Struct({ name: LibraryText(220), version: LibraryText(60) }),
+        Schema.Struct({ name: LibraryText(220), version: LibraryText(61) }),
         10,
       ),
       requires: LibraryList(LibraryText(80), 8),
@@ -303,6 +306,25 @@ export const SynthosLibraryPrincipleDocument = Schema.Struct({
 });
 export type SynthosLibraryPrincipleDocument = typeof SynthosLibraryPrincipleDocument.Type;
 
+// count is how many items this session can see carry the facet.
+const LibraryFacetFields = {
+  id: LibraryId,
+  label: LibraryText(120),
+  definition: LibraryText(400),
+  count: NonNegativeInt,
+};
+export const SynthosLibraryStyleFacet = Schema.Struct(LibraryFacetFields);
+export const SynthosLibraryPatternFacet = Schema.Struct({
+  ...LibraryFacetFields,
+  group: LibraryText(40),
+});
+
+const LibraryRetrievedLicence = Schema.Struct({
+  name: LibraryText(120),
+  holder: LibraryText(200),
+  status: LibraryLicenceStatus,
+});
+
 export const SynthosLibraryResult = Schema.Union([
   Schema.Struct({
     library: Schema.Literal("search"),
@@ -311,11 +333,19 @@ export const SynthosLibraryResult = Schema.Union([
   }),
   SynthosLibraryAsset,
   Schema.Struct({
+    library: Schema.Literal("facets"),
+    styles: LibraryList(SynthosLibraryStyleFacet, 100),
+    patterns: LibraryList(SynthosLibraryPatternFacet, 100),
+  }),
+  // Retrieved files and covers carry the item's licence, so a reader of the file alone sees it.
+  Schema.Struct({
     library: Schema.Literal("file"),
     id: LibraryId,
     format: SynthosLibraryFormat,
     title: LibraryText(200),
-    licence: Schema.Struct({ name: LibraryText(120), holder: LibraryText(200) }),
+    access: LibraryAccess,
+    licence: LibraryRetrievedLicence,
+    framework: Schema.Struct({ status: LibraryFrameworkStatus }),
     note: LibraryText(2_000),
     text: LibraryText(SYNTHOS_LIBRARY_MAX_TEXT_BYTES),
   }),
@@ -325,6 +355,7 @@ export const SynthosLibraryResult = Schema.Union([
     mediaType: Schema.Literals(["image/png", "image/webp"]),
     data: LibraryText(Math.ceil(SYNTHOS_LIBRARY_MAX_PREVIEW_BYTES / 3) * 4),
     bytes: NonNegativeInt,
+    licence: LibraryRetrievedLicence,
   }),
   Schema.Struct({
     library: Schema.Literal("ideas"),

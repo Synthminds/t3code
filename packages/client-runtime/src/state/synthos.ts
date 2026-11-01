@@ -182,6 +182,8 @@ export function createSynthosRequestCommand<R, E>(
                 return client.execute({ headers, payload });
               case "library.search":
                 return client.execute({ headers, payload });
+              case "library.facets":
+                return client.execute({ headers, payload });
               case "library.asset":
                 return client.execute({ headers, payload });
               case "library.file":

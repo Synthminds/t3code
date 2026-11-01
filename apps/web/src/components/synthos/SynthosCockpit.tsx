@@ -112,7 +112,7 @@ export function SynthosCockpit() {
       role="main"
       aria-label="SynthOS control room"
     >
-      <div className="sx-shell flex h-full min-h-0 flex-col">
+      <div className="sx-shell dark flex h-full min-h-0 flex-col">
         <header className="sx-topbar">
           <div className="sx-brand-group">
             <SidebarTrigger />
@@ -613,7 +613,11 @@ function CockpitEnvironment({
               statuses={statuses}
               activeWorkflow={selected}
             />
-            <SynthosLibrary environmentId={environmentId} statuses={statuses} />
+            <SynthosLibrary
+              environmentId={environmentId}
+              statuses={statuses}
+              statusError={connectionError}
+            />
           </>
         )}
         {panel === "tools" && <SynthosTools environmentId={environmentId} statuses={statuses} />}
