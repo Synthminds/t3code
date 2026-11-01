@@ -37,6 +37,36 @@
   line-height: 1.65;
   color-scheme: dark;
   min-width: 0;
+  /* The cockpit is dark in either appearance. Shared ui components inside it read this palette
+     (index.css recomputes their contrast tokens here) and the shell's dark variants. */
+  --appearance-contrast-target: white;
+  --background: var(--sx-bg);
+  --foreground: var(--sx-ink);
+  --surface-raised: var(--sx-panel);
+  --card: var(--sx-panel);
+  --card-foreground: var(--sx-ink);
+  --popover: var(--sx-panel);
+  --popover-foreground: var(--sx-ink);
+  --secondary: var(--sx-well);
+  --secondary-foreground: var(--sx-ink);
+  --secondary-label: var(--sx-muted);
+  --muted: var(--sx-well);
+  --muted-foreground: var(--sx-muted);
+  --placeholder: color-mix(in srgb, var(--sx-muted) 72%, var(--sx-bg));
+  --icon-muted: var(--sx-muted);
+  --accent: #1b314e;
+  --accent-foreground: var(--sx-ink);
+  --border: var(--sx-line);
+  --input: var(--sx-line);
+  --ring: var(--sx-cyan);
+  --info-foreground: var(--sx-chrome);
+  --warning: var(--sx-warning);
+  --warning-foreground: var(--sx-warning);
+  --warning-surface: color-mix(in srgb, var(--sx-warning) 10%, transparent);
+  --message-surface: var(--sx-panel-light);
+  --message-foreground: var(--sx-ink);
+  --code-background: var(--sx-well);
+  --code-foreground: var(--sx-ink);
 }
 .sx-shell * {
   box-sizing: border-box;

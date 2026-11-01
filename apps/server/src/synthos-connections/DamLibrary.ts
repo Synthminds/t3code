@@ -7,7 +7,9 @@ import {
   SynthosLibraryIdea,
   SynthosLibraryIdeaSummary,
   SynthosLibraryKind,
+  SynthosLibraryPatternFacet,
   SynthosLibraryPrincipleDocument,
+  SynthosLibraryStyleFacet,
   type AuthEnvironmentScope,
   SynthosLibraryAsset,
   type SynthosLibraryCard,
@@ -15,6 +17,7 @@ import {
   type SynthosLibraryResult,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
@@ -27,6 +30,7 @@ import * as Queue from "effect/Queue";
 import * as RcMap from "effect/RcMap";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as SchemaIssue from "effect/SchemaIssue";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -49,12 +53,14 @@ interface DamConnection {
 }
 
 export const CALL_TIMEOUT = Duration.seconds(10);
-const START_TIMEOUT = Duration.seconds(30);
+export const START_TIMEOUT = Duration.seconds(30);
 const FORCE_KILL_AFTER = Duration.seconds(2);
 export const IDLE_TIME_TO_LIVE = Duration.minutes(5);
 // A cover preview is about 1.4 MiB of JSON (DAM's 1 MiB cap in base64); text files are smaller.
 export const MAX_MESSAGE_BYTES = 2 * 1_048_576;
+// A flood stops a process, not a long uptime: DAM logs a stack trace per INTERNAL answer.
 export const MAX_STDERR_BYTES = 262_144;
+export const STDERR_WINDOW = Duration.seconds(10);
 const MCP_PROTOCOL_VERSION = "2025-06-18";
 const INVALID_PARAMS = -32_602;
 // PATH locates node, the temp variables tsx's compile cache; node needs SystemRoot on Windows.
@@ -124,7 +130,9 @@ const DamCard = Schema.Struct({
   frameworkStatus: Schema.optionalKey(FrameworkStatus),
 });
 type DamCard = typeof DamCard.Type;
-const DamSearch = Schema.Struct({ total: NonNegativeInt, items: List(DamCard, 50) });
+// List envelopes keep their bounds; each entry is decoded on its own (decodeEntries).
+const Entries = (maxLength: number) => List(Schema.Unknown, maxLength);
+const DamSearch = Schema.Struct({ total: NonNegativeInt, items: Entries(50) });
 
 const DamFile = Schema.Struct({
   bytes: NonNegativeInt,
@@ -150,7 +158,7 @@ const DamAsset = Schema.Struct({
     name: Text(120),
     holder: Text(200),
     status: LicenceStatus,
-    notes: List(Text(400), 50),
+    notes: List(Text(400), 200),
   }),
   source: Schema.Struct({
     label: Text(200),
@@ -175,7 +183,7 @@ const DamAsset = Schema.Struct({
       exportName: Schema.NullOr(Text(80)),
       install: Schema.optionalKey(Schema.NullOr(Text(3_000))),
       runtime: Text(120),
-      packages: List(Schema.Struct({ name: Text(220), version: Text(60) }), 10),
+      packages: List(Schema.Struct({ name: Text(220), version: Text(61) }), 10),
       requires: List(Text(80), 8),
       props: List(
         Schema.Struct({
@@ -198,14 +206,9 @@ type DamAsset = typeof DamAsset.Type;
 
 const { library: _idea, ...ideaFields } = SynthosLibraryIdea.fields;
 const DamIdea = Schema.Struct(ideaFields);
-const DamIdeas = Schema.Struct({
-  total: NonNegativeInt,
-  ideas: List(SynthosLibraryIdeaSummary, 200),
-});
-const DamPrinciples = Schema.Struct({
-  total: NonNegativeInt,
-  documents: List(SynthosLibraryPrincipleDocument, 100),
-});
+const DamIdeas = Schema.Struct({ total: NonNegativeInt, ideas: Entries(200) });
+const DamPrinciples = Schema.Struct({ total: NonNegativeInt, documents: Entries(100) });
+const DamFacets = Schema.Struct({ styles: Entries(100), patterns: Entries(100) });
 const DamPreview = Schema.Struct({ contentType: Text(40), bytes: NonNegativeInt });
 const DamNote = Text(2_000);
 
@@ -233,10 +236,16 @@ const decodeMessage = Schema.decodeUnknownEffect(Schema.fromJsonString(RpcMessag
 const decodeToolResult = Schema.decodeUnknownEffect(ToolResult);
 const decodeInitialize = Schema.decodeUnknownEffect(InitializeResult);
 const decodeSearch = Schema.decodeUnknownEffect(Schema.fromJsonString(DamSearch));
+const decodeCard = Schema.decodeUnknownEffect(DamCard);
 const decodeAsset = Schema.decodeUnknownEffect(Schema.fromJsonString(DamAsset));
 const decodeIdeas = Schema.decodeUnknownEffect(Schema.fromJsonString(DamIdeas));
+const decodeIdeaSummary = Schema.decodeUnknownEffect(SynthosLibraryIdeaSummary);
 const decodeIdea = Schema.decodeUnknownEffect(Schema.fromJsonString(DamIdea));
 const decodePrinciples = Schema.decodeUnknownEffect(Schema.fromJsonString(DamPrinciples));
+const decodePrincipleDocument = Schema.decodeUnknownEffect(SynthosLibraryPrincipleDocument);
+const decodeFacets = Schema.decodeUnknownEffect(Schema.fromJsonString(DamFacets));
+const decodeStyle = Schema.decodeUnknownEffect(SynthosLibraryStyleFacet);
+const decodePattern = Schema.decodeUnknownEffect(SynthosLibraryPatternFacet);
 const decodePreview = Schema.decodeUnknownEffect(Schema.fromJsonString(DamPreview));
 const decodeNote = Schema.decodeUnknownEffect(DamNote);
 const encodeMessage = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -261,6 +270,44 @@ function damToolErrorReason(message: string): Reason {
   return /^No (?:asset|idea|principle document) /.test(message) ? "not_found" : "remote_rejected";
 }
 
+const formatIssue = SchemaIssue.makeFormatterStandardSchemaV1();
+const issuePath = (error: Schema.SchemaError) =>
+  (formatIssue(error.issue).issues[0]?.path ?? [])
+    .map((segment) => String(typeof segment === "object" ? segment.key : segment))
+    .join(".");
+// Only an id in DAM's own id alphabet reaches a log line.
+const loggableId = (entry: unknown) => {
+  const id = typeof entry === "object" && entry !== null && "id" in entry ? entry.id : undefined;
+  return typeof id === "string" && /^[a-z0-9][a-z0-9.-]{0,79}$/.test(id) ? id : null;
+};
+
+// A list entry this version cannot read (a newer kind, format or bound) is dropped rather than
+// failing the page, and logged by id and schema path only: never its values.
+function decodeEntries<A>(
+  decode: (entry: unknown) => Effect.Effect<A, Schema.SchemaError>,
+  entries: ReadonlyArray<unknown>,
+  tool: string,
+  mode: Mode,
+): Effect.Effect<Array<A>> {
+  return Effect.forEach(entries, (entry) =>
+    decode(entry).pipe(
+      Effect.map((value) => [value]),
+      Effect.catch((error) =>
+        Effect.logWarning("DAM library entry dropped").pipe(
+          Effect.annotateLogs({
+            code: "DAM_ENTRY_DROPPED",
+            mode,
+            tool,
+            id: loggableId(entry),
+            path: issuePath(error),
+          }),
+          Effect.as([]),
+        ),
+      ),
+    ),
+  ).pipe(Effect.map((decoded) => decoded.flat()));
+}
+
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const matchesImageType = (bytes: Uint8Array, mediaType: "image/png" | "image/webp") =>
   mediaType === "image/png"
@@ -270,6 +317,9 @@ const matchesImageType = (bytes: Uint8Array, mediaType: "image/png" | "image/web
 
 // When DAM omits access, the owner process can serve owner-only items, so it is assumed.
 const defaultAccess = (mode: Mode) => (mode === "owner" ? "owner" : "public");
+// An older DAM omits access and its public process lists public items only.
+const listsNonPublic = (entry: unknown) =>
+  typeof entry === "object" && entry !== null && "access" in entry && entry.access !== "public";
 
 const toCard = (item: DamCard, mode: Mode): SynthosLibraryCard => ({
   id: item.id,
@@ -442,9 +492,14 @@ const make = Effect.gen(function* () {
       }),
       Effect.forkScoped,
     );
+    let stderrWindowStart = yield* Clock.currentTimeMillis;
     let stderrBytes = 0;
     yield* Stream.runForEach(handle.stderr, (chunk) =>
-      Effect.suspend(() => {
+      Effect.flatMap(Clock.currentTimeMillis, (now) => {
+        if (now - stderrWindowStart >= Duration.toMillis(STDERR_WINDOW)) {
+          stderrWindowStart = now;
+          stderrBytes = 0;
+        }
         stderrBytes += chunk.byteLength;
         return stderrBytes > MAX_STDERR_BYTES
           ? close(failure("transport"), "DAM_STDERR_LIMIT")
@@ -593,22 +648,34 @@ const make = Effect.gen(function* () {
     function* (actor, command) {
       if (config.damRoot === undefined) return yield* failure("unavailable");
       const mode: Mode =
-        config.damOwner && actor.scopes.includes("filesystem:read") ? "owner" : "public";
+        config.damOwner === "on" && actor.scopes.includes("filesystem:read") ? "owner" : "public";
       yield* Effect.annotateCurrentSpan({ "dam.mode": mode, "dam.command": command.type });
       switch (command.type) {
         case "library.search": {
           const { type: _type, ...args } = command;
           const { texts } = yield* callTool(mode, "search_assets", args);
           const value = yield* decodeSearch(texts[0]).pipe(Effect.mapError(invalid));
-          // A public process that lists owner-only items is broken; its count is not trustworthy either.
-          if (mode === "public" && value.items.some((item) => item.access === "owner")) {
+          // Checked on the raw entries, before any is dropped: a public process that lists an item
+          // it does not mark public is broken, and its count is not trustworthy either.
+          if (mode === "public" && value.items.some(listsNonPublic)) {
             yield* logIssue("DAM_ACCESS_VIOLATION", mode);
             return yield* failure("response_invalid");
           }
+          const cards = yield* decodeEntries(decodeCard, value.items, "search_assets", mode);
+          // total stays DAM's count, so it can include entries dropped above.
           return {
             library: "search",
             total: value.total,
-            items: value.items.map((item) => toCard(item, mode)),
+            items: cards.map((item) => toCard(item, mode)),
+          };
+        }
+        case "library.facets": {
+          const { texts } = yield* callTool(mode, "list_facets", {});
+          const value = yield* decodeFacets(texts[0]).pipe(Effect.mapError(invalid));
+          return {
+            library: "facets",
+            styles: yield* decodeEntries(decodeStyle, value.styles, "list_facets", mode),
+            patterns: yield* decodeEntries(decodePattern, value.patterns, "list_facets", mode),
           };
         }
         case "library.asset":
@@ -625,12 +692,19 @@ const make = Effect.gen(function* () {
             id: asset.id,
             format: command.format,
             title: asset.title,
-            licence: { name: asset.licence.name, holder: asset.licence.holder },
+            access: asset.access ?? defaultAccess(mode),
+            licence: {
+              name: asset.licence.name,
+              holder: asset.licence.holder,
+              status: asset.licence.status,
+            },
+            framework: { status: asset.framework.status },
             ...document,
           };
         }
         case "library.preview": {
-          if (mode === "public") yield* readAsset(mode, command.id);
+          // The asset read checks access and supplies the licence the cover travels with.
+          const asset = yield* readAsset(mode, command.id);
           const { texts, content } = yield* callTool(mode, "get_asset_preview", { id: command.id });
           const meta = yield* decodePreview(texts[0]).pipe(Effect.mapError(invalid));
           const image = content.find((block) => block.type === "image");
@@ -652,17 +726,26 @@ const make = Effect.gen(function* () {
             return yield* failure("response_invalid");
           return {
             library: "preview",
-            id: command.id,
+            id: asset.id,
             mediaType,
             data: image.data,
             bytes: meta.bytes,
+            licence: {
+              name: asset.licence.name,
+              holder: asset.licence.holder,
+              status: asset.licence.status,
+            },
           };
         }
         case "library.ideas": {
           const { type: _type, ...args } = command;
           const { texts } = yield* callTool(mode, "list_ideas", args);
           const value = yield* decodeIdeas(texts[0]).pipe(Effect.mapError(invalid));
-          return { library: "ideas", ...value };
+          return {
+            library: "ideas",
+            total: value.total,
+            ideas: yield* decodeEntries(decodeIdeaSummary, value.ideas, "list_ideas", mode),
+          };
         }
         case "library.idea": {
           const { texts } = yield* callTool(mode, "get_idea", { id: command.id });
@@ -674,7 +757,16 @@ const make = Effect.gen(function* () {
         case "library.principles": {
           const { texts } = yield* callTool(mode, "list_principles", {});
           const value = yield* decodePrinciples(texts[0]).pipe(Effect.mapError(invalid));
-          return { library: "principles", ...value };
+          return {
+            library: "principles",
+            total: value.total,
+            documents: yield* decodeEntries(
+              decodePrincipleDocument,
+              value.documents,
+              "list_principles",
+              mode,
+            ),
+          };
         }
         case "library.principle": {
           const { texts } = yield* callTool(mode, "get_principles", { id: command.id });

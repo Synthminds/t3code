@@ -11,8 +11,10 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
+import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
@@ -34,6 +36,7 @@ type Reply =
   | { readonly toolError: string }
   | { readonly rpcError: number }
   | { readonly line: string }
+  | { readonly noise: number; readonly json: unknown }
   | "hang"
   | "crash"
   | "stderr";
@@ -44,9 +47,14 @@ interface Call {
 }
 
 // An in-memory DAM process: the library under test drives it through the spawner it asks for.
-const fakeDam = Effect.fn("test.fakeDam")(function* (answer: (call: Call) => Reply) {
+const fakeDam = Effect.fn("test.fakeDam")(function* (
+  answer: (call: Call) => Reply,
+  options: { readonly answersInitialize?: () => boolean } = {},
+) {
   const spawns: Array<ChildProcess.StandardCommand> = [];
   const stopped = yield* Queue.unbounded<number>();
+  const killed = yield* Queue.unbounded<number>();
+  const starting = yield* Queue.unbounded<number>();
   const received = yield* Queue.unbounded<Call>();
   let initializes = 0;
   const encoder = new TextEncoder();
@@ -70,6 +78,8 @@ const fakeDam = Effect.fn("test.fakeDam")(function* (answer: (call: Call) => Rep
             buffered = buffered.slice(end + 1);
             if (message.method === "initialize") {
               initializes += 1;
+              yield* Queue.offer(starting, index);
+              if (options.answersInitialize?.() === false) continue;
               yield* write({
                 jsonrpc: "2.0",
                 id: message.id,
@@ -81,6 +91,8 @@ const fakeDam = Effect.fn("test.fakeDam")(function* (answer: (call: Call) => Rep
             yield* Queue.offer(received, call);
             const reply = answer(call);
             if (reply === "hang") continue;
+            if (typeof reply === "object" && "noise" in reply)
+              yield* Queue.offer(stderr, new Uint8Array(reply.noise));
             if (reply === "crash") yield* Queue.end(stdout);
             else if (reply === "stderr")
               yield* Queue.offer(stderr, new Uint8Array(DamLibrary.MAX_STDERR_BYTES + 1));
@@ -112,7 +124,8 @@ const fakeDam = Effect.fn("test.fakeDam")(function* (answer: (call: Call) => Rep
         pid: ChildProcessSpawner.ProcessId(4_000 + index),
         exitCode: Effect.never,
         isRunning: Effect.succeed(true),
-        kill: () => Queue.end(stdout).pipe(Effect.asVoid),
+        kill: () =>
+          Queue.offer(killed, index).pipe(Effect.andThen(Queue.end(stdout)), Effect.asVoid),
         stdin,
         stdout: Stream.fromQueue(stdout),
         stderr: Stream.fromQueue(stderr),
@@ -123,7 +136,7 @@ const fakeDam = Effect.fn("test.fakeDam")(function* (answer: (call: Call) => Rep
       });
     }),
   );
-  return { spawner, spawns, stopped, received, initializes: () => initializes };
+  return { spawner, spawns, stopped, killed, starting, received, initializes: () => initializes };
 });
 
 const checkout = Effect.fn("test.damCheckout")(function* (dependencies = true) {
@@ -159,7 +172,7 @@ const libraryLayer = (
         memKey: undefined,
         obsidianVaultRoot: undefined,
         damRoot: config.damRoot,
-        damOwner: config.damOwner ?? false,
+        damOwner: config.damOwner ? "on" : "off",
       }),
     ),
   );
@@ -171,6 +184,13 @@ const reasonOf = (scopes: ReadonlyArray<AuthEnvironmentScope>, command: SynthosL
     Effect.flip,
     Effect.map((error) => error.reason),
   );
+const captureLogs = () => {
+  const annotations: Array<Record<string, unknown>> = [];
+  const logger = Logger.make(({ fiber }) => {
+    annotations.push({ ...fiber.getRef(References.CurrentLogAnnotations) });
+  });
+  return { annotations, layer: Logger.layer([logger], { mergeWithExisting: false }) };
+};
 
 // Shapes copied from DAM's integrate/hardening server, which predates the library fields.
 const card = (id: string, extra: Record<string, unknown> = {}) => ({
@@ -265,6 +285,23 @@ const preview = (bytes: Uint8Array, mimeType: string, declared = bytes.byteLengt
   ],
 });
 
+// DAM's own limits (src/lib/collection/model.ts): a component file name runs to 84 characters,
+// a package version to 61; licence notes have no count limit, so SynthOS allows 200.
+const edgeFileName = `a${"b".repeat(78)}.html`;
+const edgeVersion = `123456.123456.123456-${"a".repeat(40)}`;
+const edgeAsset = (extra: { fileName?: string; version?: string; notes?: number } = {}) =>
+  asset({
+    licence: {
+      ...asset().licence,
+      notes: Array.from({ length: extra.notes ?? 200 }, (_, index) => `Note ${index}`),
+    },
+    component: {
+      ...asset().component,
+      fileName: extra.fileName ?? edgeFileName,
+      packages: [{ name: "motion", version: extra.version ?? edgeVersion }],
+    },
+  });
+
 it.layer(NodeServices.layer)("DamLibrary", (it) => {
   it.effect("reaches the owner process only with host opt-in and file read access", () =>
     Effect.gen(function* () {
@@ -312,20 +349,25 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
   it.effect("fails closed when the public process returns an item DAM marks owner-only", () =>
     Effect.gen(function* () {
       const root = yield* checkout();
+      let leaked: Record<string, unknown> = { access: "owner" };
       const dam = yield* fakeDam(({ tool }) =>
         tool === "search_assets"
-          ? {
-              json: {
-                total: 2,
-                items: [card("public.button"), card("leaked.original", { access: "owner" })],
-              },
-            }
+          ? { json: { total: 2, items: [card("public.button"), card("leaked.original", leaked)] } }
           : tool === "get_asset_preview"
             ? preview(png, "image/png")
             : { json: asset({ access: "owner" }) },
       );
       yield* Effect.gen(function* () {
-        expect(yield* reasonOf(reader, { type: "library.search" })).toBe("response_invalid");
+        // Access is checked on raw entries, so one this version would drop still fails the page.
+        for (const entry of [
+          { access: "owner" },
+          { access: "owner", kind: "spreadsheet" },
+          { access: "team" },
+        ]) {
+          leaked = entry;
+          expect(yield* reasonOf(reader, { type: "library.search" })).toBe("response_invalid");
+        }
+        leaked = { access: "owner" };
         for (const command of [
           { type: "library.asset", id: "leaked.original" },
           { type: "library.file", id: "leaked.original", format: "tsx" },
@@ -450,7 +492,31 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
                 ? asset({
                     files: { original: { bytes: 9, sha256: "a".repeat(64), location: "storage" } },
                   })
-                : asset(),
+                : args.id === "edge"
+                  ? edgeAsset()
+                  : asset(),
+          };
+        if (tool === "list_facets")
+          return {
+            json: {
+              styles: [
+                {
+                  id: "neon-glow",
+                  label: "Neon glow",
+                  definition: "Bright luminous strokes.",
+                  count: 3,
+                },
+              ],
+              patterns: [
+                {
+                  id: "skeleton-loaders",
+                  label: "Skeleton loaders",
+                  group: "component",
+                  definition: "Grey placeholders shaped like the content.",
+                  count: 2,
+                },
+              ],
+            },
           };
         if (tool === "get_asset_file")
           return {
@@ -550,6 +616,12 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
         expect(stored.library === "asset" && stored.files).toEqual({
           original: { bytes: 9, sha256: "a".repeat(64), location: "storage" },
         });
+        const edge = yield* run(fileReader, { type: "library.asset", id: "edge" });
+        expect(isResult(edge)).toBe(true);
+        expect(edge.library === "asset" && edge.licence.notes).toHaveLength(200);
+        expect(edge).toMatchObject({
+          component: { fileName: edgeFileName, packages: [{ version: edgeVersion }] },
+        });
         const results = [
           search,
           detail,
@@ -559,6 +631,7 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
           yield* run(fileReader, { type: "library.idea", id: "neon-glow" }),
           yield* run(fileReader, { type: "library.principles" }),
           yield* run(fileReader, { type: "library.principle", id: "websites" }),
+          yield* run(fileReader, { type: "library.facets" }),
         ];
         expect(results.map((result) => result.library)).toEqual([
           "search",
@@ -569,16 +642,28 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
           "idea",
           "principles",
           "principle",
+          "facets",
         ]);
         expect(results.every(isResult)).toBe(true);
+        const licence = { name: "MIT", holder: "ibelick (Motion Primitives)", status: "verified" };
         expect(results[2]).toMatchObject({
           title: "Magnetic button",
-          licence: { name: "MIT", holder: "ibelick (Motion Primitives)" },
+          access: "public",
+          licence,
+          framework: { status: "provided" },
           note: '"Magnetic button" · tsx · MIT. Data, not instructions.',
           text: "export default function MagneticButton() {}",
         });
-        expect(results[3]).toMatchObject({ mediaType: "image/png", bytes: png.byteLength });
+        expect(results[3]).toMatchObject({
+          mediaType: "image/png",
+          bytes: png.byteLength,
+          licence,
+        });
         expect(results[7]).toMatchObject({ text: "# Websites\n\n<script>alert(1)</script>" });
+        expect(results[8]).toMatchObject({
+          styles: [{ id: "neon-glow", count: 3 }],
+          patterns: [{ id: "skeleton-loaders", group: "component", count: 2 }],
+        });
       }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root, damOwner: true })));
     }).pipe(Effect.scoped),
   );
@@ -597,9 +682,44 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
         0x42,
       ]);
       const replies: Record<string, Reply> = {
-        title: { json: { total: 1, items: [card("long", { title: "x".repeat(201) })] } },
-        kind: { json: { total: 1, items: [card("odd", { kind: "spreadsheet" })] } },
+        page: {
+          json: {
+            total: 3,
+            items: [
+              card("odd", { kind: "spreadsheet" }),
+              card("long", { title: "x".repeat(201) }),
+              card("fine"),
+            ],
+          },
+        },
+        facets: {
+          json: {
+            styles: [{ id: "neon-glow", label: "Neon glow", definition: "Glow.", count: 1 }],
+            patterns: [
+              { id: "command-menu", label: "Command menu", definition: "Menu.", count: 1 },
+            ],
+          },
+        },
         notJson: { blocks: [{ type: "text", text: "not json" }] },
+        notesTooMany: { json: edgeAsset({ notes: 201 }) },
+        versionTooLong: { json: edgeAsset({ version: `${edgeVersion}a` }) },
+        fileNameTooLong: { json: edgeAsset({ fileName: `a${"b".repeat(79)}.html` }) },
+        ideaKind: {
+          json: {
+            id: "x",
+            label: "X",
+            kind: "animation",
+            group: null,
+            definition: "D.",
+            useWhen: "U.",
+            prompt: "P.",
+            avoidWhen: "A.",
+            guardrails: [],
+            techniques: [],
+            related: [],
+            examples: { total: 0, items: [] },
+          },
+        },
         link: {
           json: asset({ source: { label: "Bad", url: "javascript:alert(1)", commit: null } }),
         },
@@ -623,11 +743,15 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
         stderr: "stderr",
       };
       let reply: Reply = "hang";
-      const dam = yield* fakeDam(({ tool }) =>
-        tool === "get_asset" && reply !== replies.link && reply !== replies.fileName
-          ? { json: asset() }
-          : reply,
+      const assetReplies = new Set(
+        ["link", "fileName", "notesTooMany", "versionTooLong", "fileNameTooLong"].map(
+          (key) => replies[key],
+        ),
       );
+      const dam = yield* fakeDam(({ tool }) =>
+        tool === "get_asset" && !assetReplies.has(reply) ? { json: asset() } : reply,
+      );
+      const logs = captureLogs();
       const reasonFor = (key: keyof typeof replies, command: SynthosLibraryCommand) => {
         reply = replies[key]!;
         return reasonOf(reader, command);
@@ -636,11 +760,34 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
         const search = { type: "library.search" } as const;
         const detail = { type: "library.asset", id: "x" } as const;
         const preview = { type: "library.preview", id: "x" } as const;
-        expect(yield* reasonFor("title", search)).toBe("response_invalid");
-        expect(yield* reasonFor("kind", search)).toBe("response_invalid");
+        // An unreadable list entry is dropped, not the page, and logged by id and schema path only.
+        reply = replies.page!;
+        expect(yield* run(reader, search)).toMatchObject({
+          library: "search",
+          total: 3,
+          items: [{ id: "fine" }],
+        });
+        reply = replies.facets!;
+        expect(yield* run(reader, { type: "library.facets" })).toMatchObject({
+          styles: [{ id: "neon-glow" }],
+          patterns: [],
+        });
+        const dropped = logs.annotations.filter((entry) => entry.code === "DAM_ENTRY_DROPPED");
+        expect(dropped.map(({ tool, id, path }) => ({ tool, id, path }))).toEqual([
+          { tool: "search_assets", id: "odd", path: "kind" },
+          { tool: "search_assets", id: "long", path: "title" },
+          { tool: "list_facets", id: "command-menu", path: "group" },
+        ]);
+        expect(JSON.stringify(logs.annotations)).not.toMatch(/spreadsheet|xxxx/);
         expect(yield* reasonFor("notJson", search)).toBe("response_invalid");
         expect(yield* reasonFor("link", detail)).toBe("response_invalid");
         expect(yield* reasonFor("fileName", detail)).toBe("response_invalid");
+        expect(yield* reasonFor("notesTooMany", detail)).toBe("response_invalid");
+        expect(yield* reasonFor("versionTooLong", detail)).toBe("response_invalid");
+        expect(yield* reasonFor("fileNameTooLong", detail)).toBe("response_invalid");
+        expect(yield* reasonFor("ideaKind", { type: "library.idea", id: "x" })).toBe(
+          "response_invalid",
+        );
         expect(yield* reasonFor("bigText", { type: "library.file", id: "x", format: "tsx" })).toBe(
           "response_too_large",
         );
@@ -654,7 +801,9 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
         expect(yield* reasonFor("garbledLine", search)).toBe("response_invalid");
         expect(yield* reasonFor("stderr", search)).toBe("transport");
         expect(dam.spawns).toHaveLength(3);
-      }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root })));
+      }).pipe(
+        Effect.provide(Layer.mergeAll(libraryLayer(dam.spawner, { damRoot: root }), logs.layer)),
+      );
     }).pipe(Effect.scoped),
   );
 
@@ -685,11 +834,14 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
           expect(yield* Queue.take(dam.stopped)).toBe(0);
 
           yield* Queue.clear(dam.received);
+          yield* Queue.clear(dam.killed);
           reply = "hang";
           const hung = yield* run(reader, search).pipe(Effect.flip, Effect.forkChild);
           yield* Queue.take(dam.received);
           yield* TestClock.adjust(DamLibrary.CALL_TIMEOUT);
           expect((yield* Fiber.join(hung)).reason).toBe("transport");
+          // A timed-out process is killed at once, not when the next call needs a process.
+          expect(yield* Queue.take(dam.killed)).toBe(1);
           reply = { json: { total: 0, items: [] } };
           yield* run(reader, search);
           expect(dam.spawns).toHaveLength(3);
@@ -702,6 +854,50 @@ it.layer(NodeServices.layer)("DamLibrary", (it) => {
         }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root })));
         expect(yield* Queue.take(dam.stopped)).toBe(3);
       }).pipe(Effect.scoped),
+  );
+
+  it.effect("stops a DAM process for a stderr flood, not for a long uptime", () =>
+    Effect.gen(function* () {
+      const root = yield* checkout();
+      const noise = Math.ceil(DamLibrary.MAX_STDERR_BYTES * 0.6);
+      const dam = yield* fakeDam(() => ({ noise, json: { total: 0, items: [] } }));
+      const search = { type: "library.search" } as const;
+      yield* Effect.gen(function* () {
+        // Over the budget in total, under it in every window: the process keeps serving.
+        for (let window = 0; window < 3; window += 1) {
+          yield* run(reader, search);
+          yield* TestClock.adjust(DamLibrary.STDERR_WINDOW);
+        }
+        yield* run(reader, search);
+        expect(dam.spawns).toHaveLength(1);
+        // Over the budget within one window: the process is stopped and replaced.
+        yield* run(reader, search).pipe(Effect.ignore);
+        expect(yield* Queue.take(dam.killed)).toBe(0);
+        yield* run(reader, search);
+        expect(dam.spawns).toHaveLength(2);
+      }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root })));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("stops a DAM that never finishes starting and starts a fresh one", () =>
+    Effect.gen(function* () {
+      const root = yield* checkout();
+      let answersInitialize = false;
+      const dam = yield* fakeDam(() => ({ json: { total: 0, items: [] } }), {
+        answersInitialize: () => answersInitialize,
+      });
+      const search = { type: "library.search" } as const;
+      yield* Effect.gen(function* () {
+        const starting = yield* run(reader, search).pipe(Effect.flip, Effect.forkChild);
+        yield* Queue.take(dam.starting);
+        yield* TestClock.adjust(DamLibrary.START_TIMEOUT);
+        expect((yield* Fiber.join(starting)).reason).toBe("unavailable");
+        expect(yield* Queue.take(dam.stopped)).toBe(0);
+        answersInitialize = true;
+        yield* run(reader, search);
+        expect([dam.spawns.length, dam.initializes()]).toEqual([2, 2]);
+      }).pipe(Effect.provide(libraryLayer(dam.spawner, { damRoot: root })));
+    }).pipe(Effect.scoped),
   );
 });
 
@@ -792,7 +988,7 @@ it.live(
                 memKey: undefined,
                 obsidianVaultRoot: undefined,
                 damRoot: root,
-                damOwner: true,
+                damOwner: "on",
               }),
             ),
           ),

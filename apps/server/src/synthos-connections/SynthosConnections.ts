@@ -337,6 +337,7 @@ const make = Effect.gen(function* () {
       state: config.damRoot ? "configured" : "unavailable",
       capabilities: [
         "library.search",
+        "library.facets",
         "library.asset",
         "library.file",
         "library.preview",
@@ -345,11 +346,17 @@ const make = Effect.gen(function* () {
         "library.principles",
         "library.principle",
       ],
-      reason: !config.damRoot
-        ? "Set SYNTHOS_DAM_ROOT to a DAM checkout with its dependencies installed on this host. Owner-only items stay off unless SYNTHOS_DAM_OWNER=1 is also set."
-        : config.damOwner
-          ? "DAM checkout configured; availability is checked when first used. Owner-only items are on for sessions that can read files on this host."
-          : "DAM checkout configured; availability is checked when first used. Owner-only items are off; set SYNTHOS_DAM_OWNER=1 to show them to sessions that can read files.",
+      reason: `${
+        config.damRoot
+          ? "DAM checkout configured; availability is checked when first used."
+          : "Set SYNTHOS_DAM_ROOT to a DAM checkout with its dependencies installed on this host."
+      } ${
+        config.damOwner === "on"
+          ? "Owner-only items are on for sessions that can read files on this host."
+          : config.damOwner === "unrecognized"
+            ? "SYNTHOS_DAM_OWNER has a value SynthOS does not recognize, so owner-only items are off; set it to 1 or true to show them to sessions that can read files."
+            : "Owner-only items are off; set SYNTHOS_DAM_OWNER=1 to show them to sessions that can read files."
+      }`,
     },
     {
       id: "harness",
@@ -433,6 +440,7 @@ const make = Effect.gen(function* () {
         case "device.intake":
           return yield* intake(command);
         case "library.search":
+        case "library.facets":
         case "library.asset":
         case "library.file":
         case "library.preview":

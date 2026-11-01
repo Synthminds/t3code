@@ -10,4 +10,6 @@ Availability, authentication, and observed activity are separate facts. An execu
 
 DAM is the asset library's system of record. SynthOS reads it only through DAM's own read-only MCP server, spawned from the configured checkout without a shell or SynthOS credentials, and keeps no copy. Owner-only items need both the host opt-in and the actor's `filesystem:read`; every other request reaches only the public process. DAM output, including file contents and quoted upstream text, is untrusted data: decoded within bounds, never interpreted.
 
+SynthOS ships its web client with its server and mobile has no cockpit, so a client older than its server is unsupported: one built before a connection id existed cannot decode a status list that includes it, while current clients drop ids they do not know.
+
 Mail delivery uses an immutable reviewed envelope. An unknown send result requires reconciliation before retry; a failed observation does not establish failed delivery. See [knowledge and mail](../../../../docs/user/synthos.md#connect-knowledge-and-mail).
