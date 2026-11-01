@@ -17,6 +17,7 @@ import connectionsMigration from "../persistence/Migrations/074_SynthosConnectio
 const migration = Effect.andThen(connectionsMigration, probesMigration);
 import * as ConnectionHttp from "./ConnectionHttp.ts";
 import * as ConnectionsConfig from "./ConnectionsConfig.ts";
+import * as DamLibrary from "./DamLibrary.ts";
 import * as ObsidianVault from "./ObsidianVault.ts";
 import * as RemoteConnections from "./RemoteConnections.ts";
 import * as SynthosConnections from "./SynthosConnections.ts";
@@ -39,6 +40,8 @@ const configured = {
   agentMailKey: Redacted.make("test-mail-secret"),
   memKey: Redacted.make("test-mem-secret"),
   obsidianVaultRoot: undefined,
+  damRoot: undefined,
+  damOwner: false,
 };
 
 function fixture(
@@ -55,6 +58,7 @@ function fixture(
     Layer.provide(ObsidianVault.layer({})),
     Layer.provide(NativeToolInventory.layer),
     Layer.provide(NativeToolProbes.layer.pipe(Layer.provide(NativeToolProbes.layerRunner()))),
+    Layer.provide(DamLibrary.layer),
     Layer.provide(settings),
     Layer.provideMerge(database),
     Layer.provide(NodeServices.layer),
@@ -115,6 +119,11 @@ describe("SynthosConnections", () => {
           .execute({ ...actor, scopes: ["filesystem:read"] }, { type: "obsidian.list" })
           .pipe(Effect.flip)).reason,
       ).toBe("unavailable");
+      expect(
+        (yield* service
+          .execute(actor, { type: "library.search", query: "button" })
+          .pipe(Effect.flip)).reason,
+      ).toBe("unavailable");
       expect(calls).toBe(0);
     }).pipe(
       Effect.provide(
@@ -123,7 +132,13 @@ describe("SynthosConnections", () => {
             calls += 1;
             return Response.json({});
           },
-          { agentMailKey: undefined, memKey: undefined, obsidianVaultRoot: undefined },
+          {
+            agentMailKey: undefined,
+            memKey: undefined,
+            obsidianVaultRoot: undefined,
+            damRoot: undefined,
+            damOwner: false,
+          },
         ),
       ),
     );

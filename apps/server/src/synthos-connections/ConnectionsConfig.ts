@@ -11,6 +11,8 @@ export class ConnectionsConfig extends Context.Service<
     readonly agentMailKey: Redacted.Redacted<string> | undefined;
     readonly memKey: Redacted.Redacted<string> | undefined;
     readonly obsidianVaultRoot: string | undefined;
+    readonly damRoot: string | undefined;
+    readonly damOwner: boolean;
   }
 >()("t3/synthos-connections/ConnectionsConfig") {}
 
@@ -22,6 +24,8 @@ export const layer = Layer.effect(
     const obsidianVaultRoot = yield* Config.String("SYNTHOS_OBSIDIAN_VAULT_ROOT").pipe(
       Config.option,
     );
+    const damRoot = yield* Config.String("SYNTHOS_DAM_ROOT").pipe(Config.option);
+    const damOwner = yield* Config.Boolean("SYNTHOS_DAM_OWNER").pipe(Config.withDefault(false));
     return ConnectionsConfig.of({
       agentMailKey: Option.getOrUndefined(
         Option.filter(agentMailKey, (key) => Redacted.value(key).trim().length > 0),
@@ -32,6 +36,8 @@ export const layer = Layer.effect(
       obsidianVaultRoot: Option.getOrUndefined(
         Option.filter(obsidianVaultRoot, (root) => root.trim().length > 0),
       ),
+      damRoot: Option.getOrUndefined(Option.filter(damRoot, (root) => root.trim().length > 0)),
+      damOwner,
     });
   }),
 );

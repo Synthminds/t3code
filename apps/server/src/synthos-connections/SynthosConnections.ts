@@ -22,6 +22,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ConnectionHttp from "./ConnectionHttp.ts";
 import * as ConnectionsConfig from "./ConnectionsConfig.ts";
+import * as DamLibrary from "./DamLibrary.ts";
 import * as ObsidianVault from "./ObsidianVault.ts";
 import * as RemoteConnections from "./RemoteConnections.ts";
 import * as NativeToolInventory from "./NativeToolInventory.ts";
@@ -100,6 +101,7 @@ const make = Effect.gen(function* () {
   const vault = yield* ObsidianVault.ObsidianVault;
   const inventory = yield* NativeToolInventory.NativeToolInventory;
   const probes = yield* NativeToolProbes.NativeToolProbes;
+  const library = yield* DamLibrary.DamLibrary;
 
   const readDraft = Effect.fn("SynthosConnections.readDraft")(function* (row: OutboxRow) {
     const envelope = yield* decodeEnvelope(row.envelope_json).pipe(
@@ -330,6 +332,26 @@ const make = Effect.gen(function* () {
         : "Set SYNTHOS_OBSIDIAN_VAULT_ROOT to an allowed vault directory on this host.",
     },
     {
+      id: "dam",
+      label: "DAM Library",
+      state: config.damRoot ? "configured" : "unavailable",
+      capabilities: [
+        "library.search",
+        "library.asset",
+        "library.file",
+        "library.preview",
+        "library.ideas",
+        "library.idea",
+        "library.principles",
+        "library.principle",
+      ],
+      reason: !config.damRoot
+        ? "Set SYNTHOS_DAM_ROOT to a DAM checkout with its dependencies installed on this host. SYNTHOS_DAM_OWNER=1 adds owner-only items for sessions that can read files."
+        : config.damOwner
+          ? "DAM checkout configured; availability is checked when first used. Owner-only items are on for sessions that can read files on this host."
+          : "DAM checkout configured; availability is checked when first used. Public items only: set SYNTHOS_DAM_OWNER=1 to add owner-only items for sessions that can read files.",
+    },
+    {
       id: "harness",
       label: "Harness",
       state: "companion",
@@ -410,6 +432,15 @@ const make = Effect.gen(function* () {
           return yield* vault.write(command).pipe(Effect.mapError(vaultError));
         case "device.intake":
           return yield* intake(command);
+        case "library.search":
+        case "library.asset":
+        case "library.file":
+        case "library.preview":
+        case "library.ideas":
+        case "library.idea":
+        case "library.principles":
+        case "library.principle":
+          return yield* library.execute(actor, command);
         case "device.list": {
           const rows = yield* sql<{
             proposal_json: string;
@@ -446,6 +477,7 @@ export const layerLive = Layer.unwrap(
     return layer.pipe(
       Layer.provide(NativeToolInventory.layer),
       Layer.provide(NativeToolProbes.layer.pipe(Layer.provide(NativeToolProbes.layerRunner()))),
+      Layer.provide(DamLibrary.layer),
       Layer.provide(
         RemoteConnections.layer.pipe(
           Layer.provide(ConnectionHttp.layer.pipe(Layer.provide(ConnectionHttp.layerFetch))),
