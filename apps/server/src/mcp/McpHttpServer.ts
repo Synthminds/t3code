@@ -170,7 +170,7 @@ const invalidModeLimit = HttpServerResponse.jsonUnsafe(
   { status: 400, headers: { "cache-control": "no-store" } },
 );
 
-/** Applies a client's requested mode limit; undefined when the header is malformed. */
+/** Applies a client's mode limit, and a peer link's T3-Mode-Inherit; undefined when the limit is malformed. */
 const withModeLimit = (
   invocation: McpInvocationContext.McpInvocationScope,
   request: HttpServerRequest.HttpServerRequest,

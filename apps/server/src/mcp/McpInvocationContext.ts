@@ -62,7 +62,7 @@ export const MODE_LIMIT_HEADER = "t3-mode-limit";
 /**
  * `T3-Mode-Inherit: 1` beside `T3-Mode-Limit` marks that limit as the calling agent's own
  * modes, so a launch naming no mode starts there, not at the project default. Only a peer
- * link's is honoured, and a link sends it only for a thread: a client has a ceiling, not modes.
+ * link's is honored, and a link sends it only for a thread: a client has a ceiling, not modes.
  */
 export const MODE_INHERIT_HEADER = "t3-mode-inherit";
 
