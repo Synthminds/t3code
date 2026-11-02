@@ -128,9 +128,8 @@ function KnowledgeSource({
       setSearched(true);
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   }
 
   async function open(id: string) {
@@ -157,9 +156,8 @@ function KnowledgeSource({
       setPath(id);
     } catch (cause) {
       if (requestId === sequence.current) setError(message(cause));
-    } finally {
-      if (requestId === sequence.current) setBusy(false);
     }
+    if (requestId === sequence.current) setBusy(false);
   }
 
   async function save() {
@@ -202,9 +200,8 @@ function KnowledgeSource({
       setSaved(true);
     } catch (cause) {
       setError(message(cause));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   }
 
   return (
