@@ -162,8 +162,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           );
         // A caller outside a thread has nothing to inherit, so it starts with the
         // project's effective defaults, as the composer does. Its mode stays
-        // within the ceiling it was approved with. A linked session carries the
-        // remote caller's modes, capped by the link, so it starts there instead.
+        // within the ceiling it was approved with. A linked thread's own modes
+        // arrive as T3-Mode-Inherit, capped by the link, so it starts there instead.
         const projectDefaults =
           caller === undefined && !replaying
             ? yield* ServerSettings.ServerSettingsService.pipe(
@@ -192,7 +192,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         const startedRuntimeMode =
           projectDefaults !== undefined &&
           input.runtimeMode === undefined &&
-          linkOrigin === undefined
+          scope.client?.inheritsModes !== true
             ? yield* resolveRuntimeMode(runtimeMode, projectDefaults.defaultRuntimeMode).pipe(
                 Effect.orElseSucceed(() => runtimeMode),
               )
