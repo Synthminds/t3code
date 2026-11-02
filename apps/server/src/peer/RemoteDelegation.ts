@@ -237,8 +237,9 @@ const make = Effect.gen(function* () {
           ? inherited.options
           : undefined);
       // Modes asked for are checked against this thread. Omitted ones are left
-      // to the other side, which inherits this thread's modes capped by the
-      // link's access, so a narrower link still takes the task.
+      // to the other side, which starts the task at its default for new threads
+      // within this thread's modes and the link's access, so a narrower link
+      // still takes the task.
       const runtimeMode =
         input.runtimeMode === undefined || input.runtimeMode === "inherit"
           ? undefined
