@@ -12,6 +12,13 @@ type Props = {
 type VaultNote = { path: string; content: string; version: string };
 type Capture = { sourceKey: string; provenance: string };
 
+function assertVaultConfigured(connections: readonly SynthosConnectionStatus[]) {
+  const status = connections.find((connection) => connection.id === "obsidian");
+  if (status?.state !== "configured") {
+    throw new Error(status?.reason ?? "Configure the Obsidian vault on this host first.");
+  }
+}
+
 function sourceKey(environmentId: EnvironmentId, workflow: SynthosWorkflow) {
   return JSON.stringify([environmentId, workflow.id, workflow.revision, workflow.policyHash]);
 }
@@ -99,10 +106,7 @@ function MemoryCaptureForm({ environmentId, connected, workflow }: Props) {
         "/api/synthos/connections",
         { method: "POST", body: { type: "status" } },
       );
-      const status = result.connections.find((connection) => connection.id === "obsidian");
-      if (status?.state !== "configured") {
-        throw new Error(status?.reason ?? "Configure the Obsidian vault on this host first.");
-      }
+      assertVaultConfigured(result.connections);
       setCapture({
         sourceKey: sourceKey(environmentId, workflow),
         provenance: provenance(environmentId, workflow),
@@ -114,10 +118,9 @@ function MemoryCaptureForm({ environmentId, connected, workflow }: Props) {
       clearReview();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The vault status could not be read.");
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
     }
+    inFlight.current = false;
+    setBusy(false);
   }
 
   async function readDestination() {
@@ -134,10 +137,9 @@ function MemoryCaptureForm({ environmentId, connected, workflow }: Props) {
       setExisting(note);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The destination could not be read.");
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
     }
+    inFlight.current = false;
+    setBusy(false);
   }
 
   async function save() {
@@ -173,10 +175,9 @@ function MemoryCaptureForm({ environmentId, connected, workflow }: Props) {
       setError(
         `${cause instanceof Error ? cause.message : "Save was not confirmed."} Read the destination before retrying; your draft is retained.`,
       );
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
     }
+    inFlight.current = false;
+    setBusy(false);
   }
 
   return (
