@@ -95,9 +95,11 @@ Unlinking on the linking side only forgets the token.
   approved access with. A plan-mode agent therefore cannot start full-access
   work through a full-access link.
 - **A launch that names no mode inherits a calling thread's modes**, capped by
-  the link: the forwarder adds `T3-Mode-Inherit: 1` only for a thread. A client
-  outside a thread sends a ceiling, not modes, so the far side starts it at the
-  project default, as here. Environments without the header keep that default.
+  the link: the forwarder adds `T3-Mode-Inherit: 1` only for a thread, and the
+  receiving `/mcp` honours it only from a peer link. A client outside a thread
+  sends a ceiling, not modes, so the far side starts its launch at the project
+  default, within that ceiling and the link, as here. If either side predates
+  the header, every linked launch keeps that project default.
 - **The token goes only to an address that proves it is the linked
   environment**: its descriptor must report the linked environment id. A LAN
   address that now belongs to another machine never receives it.
