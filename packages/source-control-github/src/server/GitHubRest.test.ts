@@ -8,6 +8,7 @@ import * as Tracer from "effect/Tracer";
 import { ChildProcessSpawner } from "effect/process";
 import { VcsProcessTimeoutError } from "@t3tools/contracts";
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/http";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import * as GitHubRest from "./GitHubRest.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
@@ -246,6 +247,8 @@ describe("GitHubCredentials", () => {
   const credentialsWith = (run: SourceControlHost.SourceControlHost["Service"]["process"]["run"]) =>
     GitHubCredentials.layer.pipe(
       Layer.provide(TestSourceControlHost.layer({ process: { run } })),
+      // An ambient GH_TOKEN or GITHUB_TOKEN outranks gh, so these cases would never reach it.
+      Layer.provide(Layer.succeed(HostProcess.Environment, {})),
       Layer.provide(NodeCrypto.layer),
       Layer.provide(Layer.succeed(HttpClient.HttpClient, unexpectedHttp)),
     );
