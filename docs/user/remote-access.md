@@ -294,6 +294,9 @@ and the access, then approve.
 
 - The access you pick is the most agents from this machine may do there. An
   agent also never gets more there than its own mode here.
+- A thread or task an agent starts there without naming a mode runs in the
+  agent's own mode, up to the link's access. Both machines need a SynthOS
+  version with this behaviour; otherwise it starts at that machine's default.
 - Threads a link starts are marked **From** and this machine's name there.
 - A full-access link works there like that machine's own agents. Below full
   access, the link's agents can change only threads it started, not that

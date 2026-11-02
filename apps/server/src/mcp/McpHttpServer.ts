@@ -185,7 +185,8 @@ const withModeLimit = (
         client: {
           ...invocation.client,
           narrowedTo: limit.value,
-          ...(request.headers[McpInvocationContext.MODE_INHERIT_HEADER] === "1"
+          ...(invocation.client.linked === true &&
+          request.headers[McpInvocationContext.MODE_INHERIT_HEADER] === "1"
             ? { inheritsModes: true }
             : {}),
         },

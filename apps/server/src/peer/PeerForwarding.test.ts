@@ -292,7 +292,9 @@ const makeLaptop = Effect.gen(function* () {
                   threadId,
                   threadId === ThreadId.make("thread:laptop-plan")
                     ? { runtimeMode: "full-access", interactionMode: "plan" }
-                    : { runtimeMode: "full-access" },
+                    : threadId === ThreadId.make("thread:laptop-auto")
+                      ? { runtimeMode: "auto" }
+                      : { runtimeMode: "full-access" },
                 ),
           ),
         getProjectThreadRecords: ({ threadId }) =>
@@ -532,11 +534,16 @@ it.effect("launches in a linked environment with the caller's modes, retry-safe"
       expect(yield* Ref.get(b.bearers)).toEqual([]);
       expect((yield* Ref.get(seen)).launches).toHaveLength(2);
 
+      // A thread's own mode below the link carries over as itself: auto, not
+      // the link's full access, and not the box default.
+      const fromAuto = yield* launch("thread:laptop-auto", { clientRequestId: "launch-3" });
+      expect(fromAuto.isError).toBe(false);
+      expect((yield* Ref.get(seen)).launches[2]).toMatchObject({ runtimeMode: "auto" });
       // A client outside a thread has a ceiling, not modes to inherit, so its
       // launch there starts at that project's default, as it would here.
-      const fromClient = yield* launch("client:outside", { clientRequestId: "launch-3" });
+      const fromClient = yield* launch("client:outside", { clientRequestId: "launch-4" });
       expect(fromClient.isError).toBe(false);
-      expect((yield* Ref.get(seen)).launches[2]).toMatchObject({
+      expect((yield* Ref.get(seen)).launches[3]).toMatchObject({
         runtimeMode: "approval-required",
       });
     }),
