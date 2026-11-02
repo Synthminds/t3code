@@ -73,10 +73,9 @@ function ToolsPanel({ environmentId, statuses }: SynthosToolsProps) {
       setError(
         cause instanceof Error ? cause.message : "AgentMail could not complete this request.",
       );
-    } finally {
-      pending.current = false;
-      setBusy(null);
     }
+    pending.current = false;
+    setBusy(null);
   }
 
   function invalidateDraft() {

@@ -57,10 +57,9 @@ export function SynthosSupplies({ environmentId }: { environmentId: EnvironmentI
       } catch (cause) {
         if (!controller.signal.aborted)
           setError(cause instanceof Error ? cause.message : "Tool inventory could not be loaded.");
-      } finally {
-        inFlight = false;
-        if (!controller.signal.aborted) setBusy(false);
       }
+      inFlight = false;
+      if (!controller.signal.aborted) setBusy(false);
     };
     void load();
     const interval = window.setInterval(() => {
@@ -93,9 +92,8 @@ export function SynthosSupplies({ environmentId }: { environmentId: EnvironmentI
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The host could not complete this probe.");
-    } finally {
-      setProbingId(null);
     }
+    setProbingId(null);
   }
 
   return (

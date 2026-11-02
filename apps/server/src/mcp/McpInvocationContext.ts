@@ -45,6 +45,8 @@ export interface McpClientCaller {
    * another environment passing on the limits of the agent it calls for.
    */
   readonly narrowedTo?: ClientModes | undefined;
+  /** `narrowedTo` is the calling agent's own running modes (`T3-Mode-Inherit`), not only a ceiling. */
+  readonly inheritsModes?: boolean | undefined;
   /** The origin an outside client reached; its thread links open the web app there. */
   readonly webOrigin?: string | undefined;
 }
@@ -53,9 +55,16 @@ export interface McpClientCaller {
  * `T3-Mode-Limit: <runtimeMode>/<interactionMode>` lets an OAuth client cap
  * a request below what it was approved with: another environment passes on
  * the limits of the agent it calls for. It can only narrow (see
- * `clientModeCeiling`), so a client gains nothing by sending a broad one.
+ * `clientModeCeiling`), so a client gains no access by sending a broad one.
  */
 export const MODE_LIMIT_HEADER = "t3-mode-limit";
+
+/**
+ * `T3-Mode-Inherit: 1` beside `T3-Mode-Limit` marks that limit as the calling agent's own
+ * modes, so a launch naming no mode starts there, not at the project default. Only a peer
+ * link's is honored, and a link sends it only for a thread: a client has a ceiling, not modes.
+ */
+export const MODE_INHERIT_HEADER = "t3-mode-inherit";
 
 export interface ClientModes {
   readonly runtimeMode: RuntimeMode;

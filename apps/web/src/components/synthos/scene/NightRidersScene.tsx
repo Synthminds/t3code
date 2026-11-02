@@ -30,6 +30,9 @@ type SceneModule = {
   ) => SceneController;
 };
 
+const loadSceneModule = (moduleUrl: string) =>
+  import(/* @vite-ignore */ moduleUrl) as Promise<SceneModule>;
+
 export function NightRidersScene(props: NightRidersSceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<SceneController | null>(null);
@@ -48,7 +51,7 @@ export function NightRidersScene(props: NightRidersSceneProps) {
     if (!host) return;
     let disposed = false;
     const moduleUrl = `${import.meta.env.BASE_URL}synthos/night-riders-engine.js`;
-    void (import(/* @vite-ignore */ moduleUrl) as Promise<SceneModule>)
+    void loadSceneModule(moduleUrl)
       .then(({ mountNightRiders }) => {
         if (disposed) return;
         controllerRef.current = mountNightRiders(

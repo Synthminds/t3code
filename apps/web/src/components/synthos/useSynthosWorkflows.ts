@@ -44,10 +44,9 @@ export function useSynthosWorkflows(environmentId: EnvironmentId | null) {
               ? cause.message
               : "Workflow service could not be reached. Retry after reconnecting.",
           );
-      } finally {
-        inFlight = false;
-        if (current) setLoading(false);
       }
+      inFlight = false;
+      if (current) setLoading(false);
     };
     void load();
     const interval = window.setInterval(() => {
