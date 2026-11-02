@@ -580,12 +580,15 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
         origin: "https://box.tail1234.ts.net",
         "x-forwarded-host": "box.tail1234.ts.net",
       });
-      yield* upgrade({ origin: "t3code://app" });
+      yield* upgrade({ origin: "synthos://app" });
+      yield* upgrade({ origin: "synthos-dev://app" });
       yield* upgrade({ origin: "http://localhost:5733" });
       yield* upgrade({});
 
       const otherPort = yield* Effect.flip(upgrade({ origin: "http://192.168.1.50:8080" }));
       expect(otherPort._tag).toBe("ServerAuthInvalidCredentialError");
+      const upstreamDesktop = yield* Effect.flip(upgrade({ origin: "t3code://app" }));
+      expect(upstreamDesktop._tag).toBe("ServerAuthInvalidCredentialError");
       const opaque = yield* Effect.flip(upgrade({ origin: "null" }));
       expect(opaque._tag).toBe("ServerAuthInvalidCredentialError");
     }).pipe(
