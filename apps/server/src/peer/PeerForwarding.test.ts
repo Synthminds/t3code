@@ -317,18 +317,23 @@ const makeLaptop = Effect.gen(function* () {
   );
   const here = yield* Layer.build(layerHere);
   const server = Context.get(here, McpServer.McpServer);
+  // A `client:` caller is an OAuth client outside any thread, approved for full access.
   const scopeOf = (
     caller: string,
     capabilities: ReadonlySet<McpInvocationContext.McpCapability> = new Set(["orchestration"]),
   ): McpInvocationContext.McpInvocationScope => ({
     environmentId: laptop.environmentId,
     requestNamespace: `provider-session:${caller}`,
-    thread: {
-      threadId: ThreadId.make(caller),
-      providerSessionId: `provider-session:${caller}`,
-      providerInstanceId: ProviderInstanceId.make("codex"),
-    },
-    client: undefined,
+    thread: caller.startsWith("client:")
+      ? undefined
+      : {
+          threadId: ThreadId.make(caller),
+          providerSessionId: `provider-session:${caller}`,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        },
+    client: caller.startsWith("client:")
+      ? { sessionId: caller, label: "Outside client", access: "full-access" }
+      : undefined,
     capabilities,
     issuedAt: 1,
   });
@@ -526,6 +531,14 @@ it.effect("launches in a linked environment with the caller's modes, retry-safe"
       expect(failureOf(withUpload)).toMatchObject({ code: "invalid_request" });
       expect(yield* Ref.get(b.bearers)).toEqual([]);
       expect((yield* Ref.get(seen)).launches).toHaveLength(2);
+
+      // A client outside a thread has a ceiling, not modes to inherit, so its
+      // launch there starts at that project's default, as it would here.
+      const fromClient = yield* launch("client:outside", { clientRequestId: "launch-3" });
+      expect(fromClient.isError).toBe(false);
+      expect((yield* Ref.get(seen)).launches[2]).toMatchObject({
+        runtimeMode: "approval-required",
+      });
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

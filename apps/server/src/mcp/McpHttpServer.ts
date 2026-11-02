@@ -180,7 +180,16 @@ const withModeLimit = (
   const limit = parseModeLimit(header);
   return Option.isNone(limit)
     ? undefined
-    : { ...invocation, client: { ...invocation.client, narrowedTo: limit.value } };
+    : {
+        ...invocation,
+        client: {
+          ...invocation.client,
+          narrowedTo: limit.value,
+          ...(request.headers[McpInvocationContext.MODE_INHERIT_HEADER] === "1"
+            ? { inheritsModes: true }
+            : {}),
+        },
+      };
 };
 
 // The Linked environments beta is off here: links wait until it is on again.
