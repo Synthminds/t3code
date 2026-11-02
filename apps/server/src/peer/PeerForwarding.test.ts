@@ -292,7 +292,9 @@ const makeLaptop = Effect.gen(function* () {
                   threadId,
                   threadId === ThreadId.make("thread:laptop-plan")
                     ? { runtimeMode: "full-access", interactionMode: "plan" }
-                    : { runtimeMode: "full-access" },
+                    : threadId === ThreadId.make("thread:laptop-auto")
+                      ? { runtimeMode: "auto" }
+                      : { runtimeMode: "full-access" },
                 ),
           ),
         getProjectThreadRecords: ({ threadId }) =>
@@ -317,18 +319,23 @@ const makeLaptop = Effect.gen(function* () {
   );
   const here = yield* Layer.build(layerHere);
   const server = Context.get(here, McpServer.McpServer);
+  // A `client:` caller is an OAuth client outside any thread, approved for full access.
   const scopeOf = (
     caller: string,
     capabilities: ReadonlySet<McpInvocationContext.McpCapability> = new Set(["orchestration"]),
   ): McpInvocationContext.McpInvocationScope => ({
     environmentId: laptop.environmentId,
     requestNamespace: `provider-session:${caller}`,
-    thread: {
-      threadId: ThreadId.make(caller),
-      providerSessionId: `provider-session:${caller}`,
-      providerInstanceId: ProviderInstanceId.make("codex"),
-    },
-    client: undefined,
+    thread: caller.startsWith("client:")
+      ? undefined
+      : {
+          threadId: ThreadId.make(caller),
+          providerSessionId: `provider-session:${caller}`,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        },
+    client: caller.startsWith("client:")
+      ? { sessionId: caller, label: "Outside client", access: "full-access" }
+      : undefined,
     capabilities,
     issuedAt: 1,
   });
@@ -506,10 +513,9 @@ it.effect("launches in a linked environment with the caller's modes, retry-safe"
       });
       const retried = yield* launch("thread:laptop-plan");
       const [launched, relaunched] = (yield* Ref.get(seen)).launches;
-      // The thread there keeps the caller's plan mode and starts at the box's
-      // default for new threads, approval-required, within the caller's modes
-      // and the link's full access. A retry asks for the same thread.
-      expect(launched).toMatchObject({ runtimeMode: "approval-required", interactionMode: "plan" });
+      // The thread there runs with the caller's own modes here, below the
+      // link's full access, and a retry asks for the same thread.
+      expect(launched).toMatchObject({ runtimeMode: "full-access", interactionMode: "plan" });
       expect(relaunched?.threadId).toBe(launched?.threadId);
       expect(retried.structuredContent).toEqual(first.structuredContent);
 
@@ -527,6 +533,19 @@ it.effect("launches in a linked environment with the caller's modes, retry-safe"
       expect(failureOf(withUpload)).toMatchObject({ code: "invalid_request" });
       expect(yield* Ref.get(b.bearers)).toEqual([]);
       expect((yield* Ref.get(seen)).launches).toHaveLength(2);
+
+      // A thread's own mode below the link carries over as itself: auto, not
+      // the link's full access, and not the box default.
+      const fromAuto = yield* launch("thread:laptop-auto", { clientRequestId: "launch-3" });
+      expect(fromAuto.isError).toBe(false);
+      expect((yield* Ref.get(seen)).launches[2]).toMatchObject({ runtimeMode: "auto" });
+      // A client outside a thread has a ceiling, not modes to inherit, so its
+      // launch there starts at that project's default, as it would here.
+      const fromClient = yield* launch("client:outside", { clientRequestId: "launch-4" });
+      expect(fromClient.isError).toBe(false);
+      expect((yield* Ref.get(seen)).launches[3]).toMatchObject({
+        runtimeMode: "approval-required",
+      });
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

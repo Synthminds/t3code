@@ -197,17 +197,14 @@ const boxProjects: ReadonlyArray<Project> = [
   },
 ];
 
-const serveBox = (thread: BoxThread, settings?: Parameters<typeof ServerSettings.layerTest>[0]) => {
-  return servePeer(box, boxToolkitLayer(thread, settings));
+const serveBox = (thread: BoxThread) => {
+  return servePeer(box, boxToolkitLayer(thread));
 };
 
 const boxRunId = RunId.make("run:box");
 const boxLaterRunId = RunId.make("run:box-later");
 
-const boxToolkitLayer = (
-  thread: BoxThread,
-  settings?: Parameters<typeof ServerSettings.layerTest>[0],
-) => {
+const boxToolkitLayer = (thread: BoxThread) => {
   const runId = boxRunId;
   const interrupts = new Set<string>();
   const shellOf = (threadId: ThreadId) =>
@@ -499,7 +496,7 @@ const boxToolkitLayer = (
       }),
     ),
     Layer.provide(Layer.mock(SecretRequests.SecretRequests)({})),
-    Layer.provide(ServerSettings.layerTest(settings)),
+    Layer.provide(ServerSettings.layerTest()),
     Layer.provide(NodeServices.layer),
   );
 };
@@ -902,8 +899,7 @@ it.effect("a task named only by environment inherits the parent's model, within 
   Effect.scoped(
     Effect.gen(function* () {
       const thread = yield* makeBoxThread;
-      // New threads there default to full access, above the link, so only the link caps the task.
-      const b = yield* serveBox(thread, { defaultRuntimeMode: "full-access" });
+      const b = yield* serveBox(thread);
       const offers = yield* SubscriptionRef.make<
         ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
       >([]);
