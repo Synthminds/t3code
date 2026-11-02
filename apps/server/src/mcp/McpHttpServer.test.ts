@@ -1082,6 +1082,7 @@ it.effect(
     Effect.scoped(
       Effect.gen(function* () {
         const clientToken = "client-payload.client-signature";
+        const linkToken = "link-payload.link-signature";
         const clientScope: McpInvocationContext.McpInvocationScope = {
           environmentId,
           requestNamespace: "client:linked",
@@ -1089,6 +1090,11 @@ it.effect(
           client: { sessionId: "linked", label: "T3 Code · laptop", access: "auto" },
           capabilities: new Set(["orchestration"]),
           issuedAt: 1,
+        };
+        const linkScope: McpInvocationContext.McpInvocationScope = {
+          ...clientScope,
+          requestNamespace: "client:peer-link",
+          client: { sessionId: "peer-link", label: "T3 Code · desk", access: "auto", linked: true },
         };
         // Starts a thread at the modes the gate hands it, so the outcome is those modes.
         const StartsToolkit = Toolkit.make(
@@ -1113,13 +1119,19 @@ it.effect(
             starts: McpToolAccess.startsThreads(
               (input) => input,
               (_, modes) =>
-                Effect.succeed({ modes: `${modes.runtimeMode}/${modes.interactionMode}` }),
+                Effect.gen(function* () {
+                  const scope = yield* McpInvocationContext.McpInvocationContext;
+                  const inherits = scope.client?.inheritsModes === true ? "+inherit" : "";
+                  return { modes: `${modes.runtimeMode}/${modes.interactionMode}${inherits}` };
+                }),
               "stamped",
             ),
           }),
         ).pipe(
           Layer.provideMerge(
-            McpHttpServer.layerMcpTransport.pipe(Layer.provide(ServerSettings.layerTest())),
+            McpHttpServer.layerMcpTransport.pipe(
+              Layer.provide(ServerSettings.layerTest({ linkedEnvironmentsEnabled: true })),
+            ),
           ),
           Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
           Layer.provide(
@@ -1134,7 +1146,9 @@ it.effect(
                 Effect.succeed(
                   request.headers.authorization === `Bearer ${clientToken}`
                     ? clientScope
-                    : undefined,
+                    : request.headers.authorization === `Bearer ${linkToken}`
+                      ? linkScope
+                      : undefined,
                 ),
             }),
           ),
@@ -1161,12 +1175,17 @@ it.effect(
           ),
         );
         /** Starts a thread as the client, with `limit` as T3-Mode-Limit; the HTTP status or the outcome. */
-        const start = (limit: string | undefined, args: Record<string, string> = {}) =>
+        const start = (
+          limit: string | undefined,
+          args: Record<string, string> = {},
+          as: { readonly token?: string; readonly inherit?: string } = {},
+        ) =>
           Effect.gen(function* () {
             const headers = {
               accept: "application/json, text/event-stream",
-              authorization: `Bearer ${clientToken}`,
+              authorization: `Bearer ${as.token ?? clientToken}`,
               ...(limit === undefined ? {} : { "t3-mode-limit": limit }),
+              ...(as.inherit === undefined ? {} : { "t3-mode-inherit": as.inherit }),
             };
             const initialize = yield* httpClient.post("/mcp", {
               headers,
@@ -1218,6 +1237,18 @@ it.effect(
         expect(yield* start("auto")).toBe(400);
         expect(yield* start("auto/default/extra")).toBe(400);
         expect(yield* start("root/default")).toBe(400);
+
+        // T3-Mode-Inherit marks a peer link's limit as its agent's own modes:
+        // only from a link, only beside a valid limit, and only as "1".
+        const link = { token: linkToken, inherit: "1" };
+        expect(yield* start("auto-accept-edits/plan", {}, link)).toBe(
+          "auto-accept-edits/plan+inherit",
+        );
+        expect(yield* start(undefined, {}, link)).toBe("auto/default");
+        expect(yield* start("auto/default", {}, { token: linkToken, inherit: "true" })).toBe(
+          "auto/default",
+        );
+        expect(yield* start("auto/default", {}, { inherit: "1" })).toBe("auto/default");
       }),
     ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

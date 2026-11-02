@@ -52,6 +52,14 @@ describe("V2 preview upgrade", () => {
         [70, "PeerLinks"],
         [71, "PeerLinkFence"],
         [72, "WaitingLinkRequestIndex"],
+        [73, "SynthosWorkflows"],
+        [74, "SynthosConnections"],
+        [75, "SynthosPolicySnapshots"],
+        [76, "SynthosKnowledge"],
+        [77, "SynthosProfiles"],
+        [78, "SynthosContext"],
+        [79, "SynthosGraph"],
+        [80, "SynthosToolProbes"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -147,6 +155,14 @@ describe("V2 preview upgrade", () => {
         [70, "PeerLinks"],
         [71, "PeerLinkFence"],
         [72, "WaitingLinkRequestIndex"],
+        [73, "SynthosWorkflows"],
+        [74, "SynthosConnections"],
+        [75, "SynthosPolicySnapshots"],
+        [76, "SynthosKnowledge"],
+        [77, "SynthosProfiles"],
+        [78, "SynthosContext"],
+        [79, "SynthosGraph"],
+        [80, "SynthosToolProbes"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

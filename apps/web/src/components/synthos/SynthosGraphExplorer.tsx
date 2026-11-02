@@ -13,6 +13,11 @@ import { useProjects } from "../../state/entities";
 import { synthosRequest } from "./synthosRequest";
 
 const decodeBrain = Schema.decodeUnknownSync(Schema.fromJsonString(SynthosBrainExport));
+const readBrainExport = (file: File) => {
+  if (file.size > 100_000)
+    throw new Error("Export exceeds 100 KB; create a smaller approved graph export.");
+  return file.text();
+};
 export function SynthosGraphExplorer({
   environmentId,
   activeWorkflow,
@@ -116,9 +121,8 @@ function Explorer({
         );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Graph request failed");
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   }
   const points = new Map(
     (graph?.nodes ?? []).map((n, i, all) => {
@@ -494,11 +498,7 @@ function Explorer({
                 const file = event.target.files?.[0];
                 if (!file) return;
                 try {
-                  if (file.size > 100_000)
-                    throw new Error(
-                      "Export exceeds 100 KB; create a smaller approved graph export.",
-                    );
-                  const data = decodeBrain(await file.text());
+                  const data = decodeBrain(await readBrainExport(file));
                   await run({
                     type: "import_brain",
                     projectId,

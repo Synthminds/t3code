@@ -8,9 +8,25 @@ const entries: ReadonlyArray<readonly [key: string, value: string]> = [
   ["init.defaultBranch", "main"],
 ];
 
-const existing = Number(process.env.GIT_CONFIG_COUNT ?? "0");
-process.env.GIT_CONFIG_COUNT = String(existing + entries.length);
-entries.forEach(([key, value], index) => {
-  process.env[`GIT_CONFIG_KEY_${existing + index}`] = key;
-  process.env[`GIT_CONFIG_VALUE_${existing + index}`] = value;
+// Inherited url.<base>.insteadOf rewrites change the remote URLs git reports back for fixtures.
+// Sandboxed shells inject them through env, and git has no setting that cancels one, so drop them.
+const isUrlRewrite = (key: string) => /^url\..+\.(?:push)?insteadof$/i.test(key);
+const inherited = Array.from(
+  { length: Number(process.env.GIT_CONFIG_COUNT ?? "0") },
+  (_, index) => {
+    const entry = [
+      process.env[`GIT_CONFIG_KEY_${index}`] ?? "",
+      process.env[`GIT_CONFIG_VALUE_${index}`] ?? "",
+    ] as const;
+    delete process.env[`GIT_CONFIG_KEY_${index}`];
+    delete process.env[`GIT_CONFIG_VALUE_${index}`];
+    return entry;
+  },
+);
+
+const config = [...inherited.filter(([key]) => !isUrlRewrite(key)), ...entries];
+process.env.GIT_CONFIG_COUNT = String(config.length);
+config.forEach(([key, value], index) => {
+  process.env[`GIT_CONFIG_KEY_${index}`] = key;
+  process.env[`GIT_CONFIG_VALUE_${index}`] = value;
 });
