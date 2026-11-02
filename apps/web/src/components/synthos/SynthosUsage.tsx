@@ -21,6 +21,12 @@ type UsageProps = {
   detailReady: boolean;
 };
 
+function readTokenMonitorExport(file: File) {
+  if (file.size > TOKEN_MONITOR_EXPORT_MAX_BYTES)
+    throw new Error("Token Monitor exports must be at most 2 MiB.");
+  return file.arrayBuffer();
+}
+
 function count(value: number | null): string {
   return value === null ? "Unknown" : value.toLocaleString();
 }
@@ -59,18 +65,17 @@ function UsageStation({ environmentId, connected, workflow, detailReady }: Usage
     setError(null);
     setReport(null);
     try {
-      if (file.size > TOKEN_MONITOR_EXPORT_MAX_BYTES)
-        throw new Error("Token Monitor exports must be at most 2 MiB.");
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(
+        await readTokenMonitorExport(file),
+      );
       const parsed = parseTokenMonitorExport(text);
       if (sequence === importSequence.current) setReport(parsed);
     } catch (cause) {
       if (sequence === importSequence.current) {
         setError(cause instanceof Error ? cause.message : "Unable to read this export.");
       }
-    } finally {
-      if (sequence === importSequence.current) setReading(false);
     }
+    if (sequence === importSequence.current) setReading(false);
   }
 
   return (

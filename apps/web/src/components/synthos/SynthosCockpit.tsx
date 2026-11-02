@@ -253,9 +253,8 @@ function CockpitEnvironment({
           ? cause.message
           : "Command failed. Refresh to inspect the recorded state.",
       );
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   }
 
   return (
@@ -907,9 +906,8 @@ function MissionComposer({
       setTask("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The mission could not be saved.");
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   }
   return (
     <section className="sx-panel sx-mission">

@@ -12,6 +12,12 @@ import { randomUUID } from "../../lib/utils";
 import { synthosRequest } from "./synthosRequest";
 import { refreshCrewProfileMetadata } from "./synthosCrewProfileMetadata";
 
+function assertSavedProfile(
+  result: SynthosProfileResult,
+): asserts result is Extract<SynthosProfileResult, { type: "profile" }> {
+  if (result.type !== "profile") throw new Error("The host did not return the saved profile.");
+}
+
 export function SynthosCrewProfiles({
   environmentId,
   connected,
@@ -126,7 +132,7 @@ export function SynthosCrewProfiles({
           body: command,
         },
       );
-      if (result.type !== "profile") throw new Error("The host did not return the saved profile.");
+      assertSavedProfile(result);
       if (command.type === "get") {
         mergeLatest(result.profile);
       } else setSelected(result.profile);
@@ -148,10 +154,9 @@ export function SynthosCrewProfiles({
       setError(
         `${cause instanceof Error ? cause.message : "The profile could not be saved."} Your draft is preserved. Refresh profiles, then reselect the current version before retrying a conflict.`,
       );
-    } finally {
-      pending.current = false;
-      setBusy(false);
     }
+    pending.current = false;
+    setBusy(false);
   }
 
   return (
