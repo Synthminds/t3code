@@ -506,10 +506,9 @@ it.effect("launches in a linked environment with the caller's modes, retry-safe"
       });
       const retried = yield* launch("thread:laptop-plan");
       const [launched, relaunched] = (yield* Ref.get(seen)).launches;
-      // The thread there keeps the caller's plan mode and starts at the box's
-      // default for new threads, approval-required, within the caller's modes
-      // and the link's full access. A retry asks for the same thread.
-      expect(launched).toMatchObject({ runtimeMode: "approval-required", interactionMode: "plan" });
+      // The thread there runs with the caller's own modes here, below the
+      // link's full access, and a retry asks for the same thread.
+      expect(launched).toMatchObject({ runtimeMode: "full-access", interactionMode: "plan" });
       expect(relaunched?.threadId).toBe(launched?.threadId);
       expect(retried.structuredContent).toEqual(first.structuredContent);
 
