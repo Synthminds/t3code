@@ -24,6 +24,8 @@ const PROTOCOL_VERSION = "2025-06-18";
 export interface PeerCallLimits {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
+  /** These are a calling thread's own modes, which a launch there inherits (`T3-Mode-Inherit`). */
+  readonly inherit?: boolean | undefined;
 }
 
 /**
@@ -159,6 +161,9 @@ const make = Effect.gen(function* () {
         .pipe(Effect.mapError(fromLinkError));
       const limitHeader = {
         [McpInvocationContext.MODE_LIMIT_HEADER]: `${input.limits.runtimeMode}/${input.limits.interactionMode}`,
+        ...(input.limits.inherit === true
+          ? { [McpInvocationContext.MODE_INHERIT_HEADER]: "1" }
+          : {}),
       };
       const sessionKey = `${input.environmentId} ${resolved.url}`;
       const callOnce = (sessionId: string) =>
