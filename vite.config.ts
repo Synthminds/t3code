@@ -11,6 +11,10 @@ const TEST_EXCLUDE = [
   "**/dist/**",
   "**/dist-electron/**",
   "**/.{idea,git,cache,output,temp}/**",
+  // node:test suites, which Vitest loads but finds no suite in. The scripts
+  // package's `test` task runs them with `node --test`.
+  "**/synthos-companion/**",
+  "**/synthos-service/**",
 ];
 
 // Directories whose tests belong to a package's own test config. desktop also
