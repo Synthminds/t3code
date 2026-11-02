@@ -96,7 +96,7 @@ Unlinking on the linking side only forgets the token.
   work through a full-access link.
 - **A launch that names no mode inherits a calling thread's modes**, capped by
   the link: the forwarder adds `T3-Mode-Inherit: 1` only for a thread, and the
-  receiving `/mcp` honours it only from a peer link. A client outside a thread
+  receiving `/mcp` honors it only from a peer link. A client outside a thread
   sends a ceiling, not modes, so the far side starts its launch at the project
   default, within that ceiling and the link, as here. If either side predates
   the header, every linked launch keeps that project default.
