@@ -239,11 +239,10 @@ function ContextProject({
         setError(
           `${messageOf(cause)} Your draft is retained; reload saved settings if another session changed them.`,
         );
-    } finally {
-      if (currentRequest.current === requestId) {
-        pending.current = false;
-        setBusy(false);
-      }
+    }
+    if (currentRequest.current === requestId) {
+      pending.current = false;
+      setBusy(false);
     }
   }
 

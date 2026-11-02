@@ -106,6 +106,7 @@ export function SynthosKnowledgeGraph({ environmentId }: { environmentId: Enviro
     pending.current = true;
     setBusy(true);
     setError(null);
+    let saved = false;
     try {
       const result = await run(command);
       if (result.type === "node") {
@@ -116,14 +117,13 @@ export function SynthosKnowledgeGraph({ environmentId }: { environmentId: Enviro
       setEditingNode(null);
       setEditingEdge(null);
       setRequestKey((value) => value + 1);
-      return true;
+      saved = true;
     } catch (cause) {
       setError(errorMessage(cause));
-      return false;
-    } finally {
-      pending.current = false;
-      setBusy(false);
     }
+    pending.current = false;
+    setBusy(false);
+    return saved;
   }
   async function showHistory(entity: "node" | "edge", id: string) {
     const requestId = ++historyRequest.current;
