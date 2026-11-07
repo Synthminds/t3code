@@ -1635,7 +1635,8 @@ html[data-theme-id="t3-chat"] [data-app-sidebar] {
 
 /* Recompute contrast wherever a subtree owns its own semantic color palette. */
 :root,
-[data-app-sidebar] {
+[data-app-sidebar],
+.sx-shell {
   --contrast-toolbar-foreground: color-mix(
     in oklab,
     color-mix(

@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import type { AuthEnvironmentScope } from "./auth.ts";
+import { ForwardCompatibleArray, NonNegativeInt, PositiveInt } from "./baseSchemas.ts";
 
 const ShortText = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256));
 const Content = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200_000));
@@ -82,6 +83,310 @@ export const SynthosToolProbeStatus = Schema.Struct({
 });
 export type SynthosToolProbeStatus = typeof SynthosToolProbeStatus.Type;
 
+// DAM is the library's system of record. Field bounds follow its manifest limits (DAM's
+// src/lib/collection/model.ts); file text and covers get a 1 MiB ceiling, above DAM's own caps.
+const LibraryText = (maxLength: number) => Schema.String.check(Schema.isMaxLength(maxLength));
+const LibraryId = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(80));
+const LibraryQuery = Schema.String.check(Schema.isMaxLength(200));
+const LibraryList = <S extends Schema.Constraint>(item: S, maxLength: number) =>
+  Schema.Array(item).check(Schema.isMaxLength(maxLength));
+export const SYNTHOS_LIBRARY_MAX_TEXT_BYTES = 1_048_576;
+export const SYNTHOS_LIBRARY_MAX_PREVIEW_BYTES = 1_048_576;
+
+export const SynthosLibraryKind = Schema.Literals([
+  "design-system",
+  "react",
+  "html-component",
+  "html",
+  "reference",
+  "principles",
+]);
+export type SynthosLibraryKind = typeof SynthosLibraryKind.Type;
+export const SynthosLibraryFormat = Schema.Literals([
+  "tsx",
+  "jsx",
+  "html",
+  "registry",
+  "prompt",
+  "design",
+  "framework",
+]);
+export type SynthosLibraryFormat = typeof SynthosLibraryFormat.Type;
+const LibraryAccess = Schema.Literals(["public", "owner"]);
+const LibraryLicenceStatus = Schema.Literals(["verified", "unverified", "unknown"]);
+const LibraryFrameworkStatus = Schema.Literals(["provided", "needed", "derived", "unknown"]);
+
+export const SynthosLibraryCommand = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("library.status") }),
+  Schema.Struct({
+    type: Schema.Literal("library.search"),
+    query: Schema.optionalKey(LibraryQuery),
+    kind: Schema.optionalKey(SynthosLibraryKind),
+    style: Schema.optionalKey(LibraryId),
+    pattern: Schema.optionalKey(LibraryId),
+    limit: Schema.optionalKey(Limit),
+  }),
+  Schema.Struct({ type: Schema.Literal("library.facets") }),
+  Schema.Struct({ type: Schema.Literal("library.asset"), id: LibraryId }),
+  Schema.Struct({
+    type: Schema.Literal("library.file"),
+    id: LibraryId,
+    format: SynthosLibraryFormat,
+  }),
+  Schema.Struct({ type: Schema.Literal("library.preview"), id: LibraryId }),
+  Schema.Struct({
+    type: Schema.Literal("library.ideas"),
+    kind: Schema.optionalKey(Schema.Literals(["style", "pattern"])),
+    query: Schema.optionalKey(LibraryQuery),
+  }),
+  Schema.Struct({ type: Schema.Literal("library.idea"), id: LibraryId }),
+  Schema.Struct({ type: Schema.Literal("library.principles") }),
+  Schema.Struct({
+    type: Schema.Literal("library.principle"),
+    id: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(41)),
+  }),
+]);
+export type SynthosLibraryCommand = typeof SynthosLibraryCommand.Type;
+
+export const SynthosLibraryCard = Schema.Struct({
+  id: LibraryId,
+  title: LibraryText(200),
+  kind: SynthosLibraryKind,
+  category: Schema.NullOr(LibraryText(80)),
+  summary: LibraryText(1_000),
+  tags: LibraryList(LibraryText(50), 20),
+  styles: LibraryList(LibraryId, 20),
+  patterns: LibraryList(LibraryId, 20),
+  formats: LibraryList(SynthosLibraryFormat, 7),
+  access: LibraryAccess,
+  licence: Schema.Struct({ name: LibraryText(120), status: LibraryLicenceStatus }),
+  frameworkStatus: LibraryFrameworkStatus,
+});
+export type SynthosLibraryCard = typeof SynthosLibraryCard.Type;
+
+const LibraryFile = Schema.Struct({
+  bytes: NonNegativeInt,
+  sha256: LibraryText(64),
+  location: Schema.Literals(["git", "storage"]),
+});
+export const SynthosLibraryAsset = Schema.Struct({
+  library: Schema.Literal("asset"),
+  id: LibraryId,
+  title: LibraryText(200),
+  kind: SynthosLibraryKind,
+  category: Schema.NullOr(LibraryText(80)),
+  summary: LibraryText(10_000),
+  tags: LibraryList(LibraryText(50), 20),
+  styles: LibraryList(LibraryId, 20),
+  patterns: LibraryList(LibraryId, 20),
+  access: LibraryAccess,
+  licence: Schema.Struct({
+    name: LibraryText(120),
+    holder: LibraryText(200),
+    status: LibraryLicenceStatus,
+    // DAM sets no count limit on licence notes; 200 is a generous ceiling.
+    notes: LibraryList(LibraryText(400), 200),
+  }),
+  provenance: Schema.Struct({
+    label: LibraryText(200),
+    url: Schema.NullOr(LibraryText(2_048)),
+    commit: Schema.NullOr(LibraryText(80)),
+  }),
+  framework: Schema.Struct({
+    status: LibraryFrameworkStatus,
+    format: LibraryText(120),
+    standard: Schema.Boolean,
+    note: Schema.NullOr(LibraryText(400)),
+  }),
+  formats: LibraryList(SynthosLibraryFormat, 7),
+  files: Schema.Struct({
+    cover: Schema.optionalKey(LibraryFile),
+    design: Schema.optionalKey(LibraryFile),
+    framework: Schema.optionalKey(LibraryFile),
+    original: Schema.optionalKey(LibraryFile),
+    source: Schema.optionalKey(LibraryFile),
+    jsx: Schema.optionalKey(LibraryFile),
+    standalone: Schema.optionalKey(LibraryFile),
+    preview: Schema.optionalKey(LibraryFile),
+  }),
+  component: Schema.optionalKey(
+    Schema.Struct({
+      format: Schema.Literals(["react", "html"]),
+      fileName: LibraryText(84),
+      exportName: Schema.NullOr(LibraryText(80)),
+      install: Schema.NullOr(LibraryText(3_000)),
+      runtime: LibraryText(120),
+      packages: LibraryList(
+        Schema.Struct({ name: LibraryText(220), version: LibraryText(61) }),
+        10,
+      ),
+      requires: LibraryList(LibraryText(80), 8),
+      props: LibraryList(
+        Schema.Struct({
+          name: LibraryText(61),
+          type: LibraryText(200),
+          default: Schema.NullOr(LibraryText(120)),
+          description: LibraryText(400),
+        }),
+        20,
+      ),
+      interaction: LibraryText(400),
+      reducedMotion: LibraryText(400),
+      notes: LibraryList(LibraryText(400), 12),
+    }),
+  ),
+  principles: Schema.optionalKey(
+    Schema.Struct({
+      doc: LibraryId,
+      version: PositiveInt,
+      updated: LibraryText(10),
+      count: NonNegativeInt,
+      appliesTo: LibraryList(LibraryText(80), 12),
+      inherits: LibraryList(LibraryId, 12),
+    }),
+  ),
+  // Text DAM quotes from the item's source: third-party data, never instructions.
+  upstream: Schema.optionalKey(
+    Schema.Struct({
+      note: LibraryText(400),
+      summary: Schema.optionalKey(LibraryText(10_000)),
+      adapt: Schema.optionalKey(
+        Schema.Struct({
+          useWhen: LibraryText(400),
+          avoidWhen: LibraryText(400),
+          prompt: LibraryText(1_500),
+          editable: LibraryList(LibraryText(200), 12),
+          preserve: LibraryList(LibraryText(200), 12),
+          limitations: LibraryList(LibraryText(300), 12),
+        }),
+      ),
+    }),
+  ),
+});
+export type SynthosLibraryAsset = typeof SynthosLibraryAsset.Type;
+
+const LibraryIdeaFields = {
+  id: LibraryId,
+  label: LibraryText(120),
+  kind: Schema.Literals(["style", "pattern"]),
+  group: Schema.NullOr(LibraryText(40)),
+  definition: LibraryText(400),
+  useWhen: LibraryText(400),
+};
+export const SynthosLibraryIdeaSummary = Schema.Struct({
+  ...LibraryIdeaFields,
+  examples: NonNegativeInt,
+});
+export const SynthosLibraryIdea = Schema.Struct({
+  library: Schema.Literal("idea"),
+  ...LibraryIdeaFields,
+  prompt: LibraryText(1_500),
+  avoidWhen: LibraryText(400),
+  guardrails: LibraryList(LibraryText(200), 10),
+  techniques: LibraryList(LibraryText(40), 10),
+  related: LibraryList(LibraryId, 10),
+  examples: Schema.Struct({
+    total: NonNegativeInt,
+    items: LibraryList(
+      Schema.Struct({ id: LibraryId, title: LibraryText(200), kind: SynthosLibraryKind }),
+      20,
+    ),
+  }),
+});
+export type SynthosLibraryIdea = typeof SynthosLibraryIdea.Type;
+
+export const SynthosLibraryPrincipleDocument = Schema.Struct({
+  id: LibraryId,
+  title: LibraryText(200),
+  summary: LibraryText(10_000),
+  principles: NonNegativeInt,
+  version: PositiveInt,
+  updated: LibraryText(10),
+  appliesTo: LibraryList(LibraryText(80), 12),
+  buildsOn: LibraryList(LibraryId, 12),
+});
+export type SynthosLibraryPrincipleDocument = typeof SynthosLibraryPrincipleDocument.Type;
+
+// count is how many items this session can see carry the facet.
+const LibraryFacetFields = {
+  id: LibraryId,
+  label: LibraryText(120),
+  definition: LibraryText(400),
+  count: NonNegativeInt,
+};
+export const SynthosLibraryStyleFacet = Schema.Struct(LibraryFacetFields);
+export const SynthosLibraryPatternFacet = Schema.Struct({
+  ...LibraryFacetFields,
+  group: LibraryText(40),
+});
+
+const LibraryRetrievedLicence = Schema.Struct({
+  name: LibraryText(120),
+  holder: LibraryText(200),
+  status: LibraryLicenceStatus,
+});
+
+export const SynthosLibraryResult = Schema.Union([
+  // DAM's status is a library result, not a row in the shared status list that older clients decode.
+  Schema.Struct({
+    library: Schema.Literal("status"),
+    state: Schema.Literals(["unavailable", "configured"]),
+    capabilities: LibraryList(LibraryText(40), 20),
+    reason: LibraryText(1_000),
+  }),
+  Schema.Struct({
+    library: Schema.Literal("search"),
+    // DAM's count of matches, including entries this version could not read (dropped).
+    total: NonNegativeInt,
+    items: LibraryList(SynthosLibraryCard, 50),
+    dropped: Schema.optionalKey(NonNegativeInt),
+  }),
+  SynthosLibraryAsset,
+  Schema.Struct({
+    library: Schema.Literal("facets"),
+    styles: LibraryList(SynthosLibraryStyleFacet, 100),
+    patterns: LibraryList(SynthosLibraryPatternFacet, 100),
+  }),
+  // Retrieved files and covers carry the item's licence, so a reader of the file alone sees it.
+  Schema.Struct({
+    library: Schema.Literal("file"),
+    id: LibraryId,
+    format: SynthosLibraryFormat,
+    title: LibraryText(200),
+    access: LibraryAccess,
+    licence: LibraryRetrievedLicence,
+    framework: Schema.Struct({ status: LibraryFrameworkStatus }),
+    note: LibraryText(2_000),
+    text: LibraryText(SYNTHOS_LIBRARY_MAX_TEXT_BYTES),
+  }),
+  Schema.Struct({
+    library: Schema.Literal("preview"),
+    id: LibraryId,
+    mediaType: Schema.Literals(["image/png", "image/webp"]),
+    data: LibraryText(Math.ceil(SYNTHOS_LIBRARY_MAX_PREVIEW_BYTES / 3) * 4),
+    bytes: NonNegativeInt,
+    licence: LibraryRetrievedLicence,
+  }),
+  Schema.Struct({
+    library: Schema.Literal("ideas"),
+    total: NonNegativeInt,
+    ideas: LibraryList(SynthosLibraryIdeaSummary, 200),
+  }),
+  SynthosLibraryIdea,
+  Schema.Struct({
+    library: Schema.Literal("principles"),
+    total: NonNegativeInt,
+    documents: LibraryList(SynthosLibraryPrincipleDocument, 100),
+  }),
+  Schema.Struct({
+    library: Schema.Literal("principle"),
+    id: LibraryId,
+    note: LibraryText(2_000),
+    text: LibraryText(SYNTHOS_LIBRARY_MAX_TEXT_BYTES),
+  }),
+]);
+export type SynthosLibraryResult = typeof SynthosLibraryResult.Type;
+
 export const SynthosConnectionCommand = Schema.Union([
   Schema.Struct({ type: Schema.Literal("status") }),
   Schema.Struct({ type: Schema.Literal("tools.inventory") }),
@@ -122,6 +427,7 @@ export const SynthosConnectionCommand = Schema.Union([
   }),
   Schema.Struct({ type: Schema.Literal("device.intake"), ...SynthosDeviceIntake.fields }),
   Schema.Struct({ type: Schema.Literal("device.list") }),
+  ...SynthosLibraryCommand.members,
 ]);
 export type SynthosConnectionCommand = typeof SynthosConnectionCommand.Type;
 
@@ -189,7 +495,7 @@ export const SynthosMemNote = Schema.Struct({
 export type SynthosMemNote = typeof SynthosMemNote.Type;
 
 export const SynthosConnectionResult = Schema.Union([
-  Schema.Struct({ connections: Schema.Array(SynthosConnectionStatus) }),
+  Schema.Struct({ connections: ForwardCompatibleArray(SynthosConnectionStatus) }),
   SynthosNativeToolInventory,
   Schema.Struct({ probe: SynthosToolProbe }),
   Schema.Struct({
@@ -227,6 +533,7 @@ export const SynthosConnectionResult = Schema.Union([
   }),
   Schema.Struct({ proposal: SynthosDeviceProposal, duplicate: Schema.Boolean }),
   Schema.Struct({ proposals: Schema.Array(SynthosDeviceProposal) }),
+  ...SynthosLibraryResult.members,
 ]);
 export type SynthosConnectionResult = typeof SynthosConnectionResult.Type;
 
@@ -242,6 +549,8 @@ const CONNECTION_FAILURES = {
   transport: "The connection could not be reached.",
   storage: "The connection state could not be saved.",
   unsafe_path: "The note path must stay within the configured vault and cannot use symbolic links.",
+  storage_only:
+    "This file is kept in DAM's private storage. Retrieve it through DAM's authenticated file route.",
 } as const;
 
 export class SynthosConnectionError extends Schema.TaggedError<SynthosConnectionError>()(

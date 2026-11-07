@@ -22,6 +22,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ConnectionHttp from "./ConnectionHttp.ts";
 import * as ConnectionsConfig from "./ConnectionsConfig.ts";
+import * as DamLibrary from "./DamLibrary.ts";
 import * as ObsidianVault from "./ObsidianVault.ts";
 import * as RemoteConnections from "./RemoteConnections.ts";
 import * as NativeToolInventory from "./NativeToolInventory.ts";
@@ -100,6 +101,7 @@ const make = Effect.gen(function* () {
   const vault = yield* ObsidianVault.ObsidianVault;
   const inventory = yield* NativeToolInventory.NativeToolInventory;
   const probes = yield* NativeToolProbes.NativeToolProbes;
+  const library = yield* DamLibrary.DamLibrary;
 
   const readDraft = Effect.fn("SynthosConnections.readDraft")(function* (row: OutboxRow) {
     const envelope = yield* decodeEnvelope(row.envelope_json).pipe(
@@ -410,6 +412,17 @@ const make = Effect.gen(function* () {
           return yield* vault.write(command).pipe(Effect.mapError(vaultError));
         case "device.intake":
           return yield* intake(command);
+        case "library.status":
+        case "library.search":
+        case "library.facets":
+        case "library.asset":
+        case "library.file":
+        case "library.preview":
+        case "library.ideas":
+        case "library.idea":
+        case "library.principles":
+        case "library.principle":
+          return yield* library.execute(actor, command);
         case "device.list": {
           const rows = yield* sql<{
             proposal_json: string;
@@ -446,6 +459,7 @@ export const layerLive = Layer.unwrap(
     return layer.pipe(
       Layer.provide(NativeToolInventory.layer),
       Layer.provide(NativeToolProbes.layer.pipe(Layer.provide(NativeToolProbes.layerRunner()))),
+      Layer.provide(DamLibrary.layer),
       Layer.provide(
         RemoteConnections.layer.pipe(
           Layer.provide(ConnectionHttp.layer.pipe(Layer.provide(ConnectionHttp.layerFetch))),

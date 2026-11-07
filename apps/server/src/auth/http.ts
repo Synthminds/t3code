@@ -20,6 +20,7 @@ import {
 import type { AuthEnvironmentScope, DpopFailureReason } from "@t3tools/contracts";
 import { parseOAuthScope } from "@t3tools/shared/oauthScope";
 import { causeErrorTag } from "@t3tools/shared/observability";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -75,14 +76,17 @@ export const annotateEnvironmentRequest =
     const traceId = yield* currentEnvironmentTraceId;
 
     yield* Effect.addFinalizer((exit) =>
-      exit._tag === "Failure"
-        ? Effect.logWarning("environment api request failed", {
-            endpoint,
-            traceId,
-            errorTag: causeErrorTag(exit.cause),
-            cause: exit.cause,
-          })
-        : Effect.void,
+      exit._tag === "Success"
+        ? Effect.void
+        : // A client that aborts its request interrupts the handler: expected, not a failure.
+          Cause.hasInterruptsOnly(exit.cause)
+          ? Effect.logDebug("environment api request interrupted", { endpoint, traceId })
+          : Effect.logWarning("environment api request failed", {
+              endpoint,
+              traceId,
+              errorTag: causeErrorTag(exit.cause),
+              cause: exit.cause,
+            }),
     );
     yield* Effect.annotateLogsScoped({ "environment.endpoint": endpoint, traceId });
     yield* Effect.annotateCurrentSpan({

@@ -105,6 +105,7 @@ function SelectPopup({
   alignItemWithTrigger = true,
   matchTriggerWidth = true,
   anchor,
+  portalContainer,
   ...props
 }: SelectPrimitive.Popup.Props & {
   side?: SelectPrimitive.Positioner.Props["side"];
@@ -114,9 +115,10 @@ function SelectPopup({
   alignItemWithTrigger?: SelectPrimitive.Positioner.Props["alignItemWithTrigger"];
   matchTriggerWidth?: boolean;
   anchor?: SelectPrimitive.Positioner.Props["anchor"];
+  portalContainer?: SelectPrimitive.Portal.Props["container"];
 }) {
   return (
-    <SelectPrimitive.Portal>
+    <SelectPrimitive.Portal container={portalContainer}>
       <SelectPrimitive.Positioner
         align={align}
         alignItemWithTrigger={alignItemWithTrigger}
