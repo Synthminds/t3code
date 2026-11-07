@@ -180,6 +180,26 @@ export function createSynthosRequestCommand<R, E>(
                 return client.execute({ headers, payload });
               case "device.list":
                 return client.execute({ headers, payload });
+              case "library.status":
+                return client.execute({ headers, payload });
+              case "library.search":
+                return client.execute({ headers, payload });
+              case "library.facets":
+                return client.execute({ headers, payload });
+              case "library.asset":
+                return client.execute({ headers, payload });
+              case "library.file":
+                return client.execute({ headers, payload });
+              case "library.preview":
+                return client.execute({ headers, payload });
+              case "library.ideas":
+                return client.execute({ headers, payload });
+              case "library.idea":
+                return client.execute({ headers, payload });
+              case "library.principles":
+                return client.execute({ headers, payload });
+              case "library.principle":
+                return client.execute({ headers, payload });
             }
           },
         });

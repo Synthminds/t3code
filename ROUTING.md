@@ -78,7 +78,9 @@ The versioned block is also consumed by SynthOS context routing. Keep it as the 
         "graph",
         "synthome",
         "synthbrain",
-        "synthmind"
+        "synthmind",
+        "dam",
+        "library"
       ],
       "roles": ["architect", "crew", "lead", "reviewer", "search", "grep", "docs", "router"],
       "paths": [

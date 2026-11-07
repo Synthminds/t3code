@@ -41,12 +41,14 @@ import {
   useEnvironments,
   usePrimaryEnvironmentId,
 } from "../../state/environments";
+import { RenderedAppearanceOverride } from "../../hooks/useTheme";
 import { useProjects, useThreadShells } from "../../state/entities";
 import { SidebarInset, SidebarTrigger } from "../ui/sidebar";
 import { NightRidersScene } from "./scene/NightRidersScene";
 import { useSynthosWorkflows, useSynthosWorkflowDetail } from "./useSynthosWorkflows";
 import { synthosRequest } from "./synthosRequest";
 import { SynthosKnowledge } from "./SynthosKnowledge";
+import { SynthosLibrary } from "./SynthosLibrary";
 import { SynthosTools } from "./SynthosTools";
 import { SynthosDevices } from "./SynthosDevices";
 import { SynthosPolicyInspector } from "./SynthosPolicyInspector";
@@ -111,55 +113,57 @@ export function SynthosCockpit() {
       role="main"
       aria-label="SynthOS control room"
     >
-      <div className="sx-shell flex h-full min-h-0 flex-col">
-        <header className="sx-topbar">
-          <div className="sx-brand-group">
-            <SidebarTrigger />
-            <Link to="/synthos" className="sx-brand" aria-label="SynthOS cockpit">
-              SYNTH<span>OS</span>
-              <i aria-hidden="true">/</i>
-            </Link>
-            <span className="sx-edition">NIGHT RIDERS</span>
-          </div>
-          <div className="sx-topbar-actions">
-            <label className="sx-environment">
-              <span
-                className={`sx-led ${environment?.connection.phase === "connected" ? "is-on" : ""}`}
-              />
-              <span className="sr-only">Environment</span>
-              <select
-                value={environment?.environmentId ?? ""}
-                onChange={(event) => setSelection(event.target.value)}
+      <RenderedAppearanceOverride value="dark">
+        <div className="sx-shell dark flex h-full min-h-0 flex-col">
+          <header className="sx-topbar">
+            <div className="sx-brand-group">
+              <SidebarTrigger />
+              <Link to="/synthos" className="sx-brand" aria-label="SynthOS cockpit">
+                SYNTH<span>OS</span>
+                <i aria-hidden="true">/</i>
+              </Link>
+              <span className="sx-edition">NIGHT RIDERS</span>
+            </div>
+            <div className="sx-topbar-actions">
+              <label className="sx-environment">
+                <span
+                  className={`sx-led ${environment?.connection.phase === "connected" ? "is-on" : ""}`}
+                />
+                <span className="sr-only">Environment</span>
+                <select
+                  value={environment?.environmentId ?? ""}
+                  onChange={(event) => setSelection(event.target.value)}
+                >
+                  {environments.length ? (
+                    environments.map((item) => (
+                      <option key={item.environmentId} value={item.environmentId}>
+                        {item.label}
+                      </option>
+                    ))
+                  ) : (
+                    <option value="">No environment</option>
+                  )}
+                </select>
+              </label>
+              <Link
+                to="/settings/connections"
+                className="sx-icon-button"
+                aria-label="Connection settings"
               >
-                {environments.length ? (
-                  environments.map((item) => (
-                    <option key={item.environmentId} value={item.environmentId}>
-                      {item.label}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">No environment</option>
-                )}
-              </select>
-            </label>
-            <Link
-              to="/settings/connections"
-              className="sx-icon-button"
-              aria-label="Connection settings"
-            >
-              <Settings2 size={17} />
-            </Link>
-            <Link to="/" className="sx-workspace-link">
-              <Terminal size={15} /> Workspace <ArrowRight size={14} />
-            </Link>
-          </div>
-        </header>
-        <CockpitEnvironment
-          key={environment?.environmentId ?? "disconnected"}
-          environmentId={environment?.environmentId ?? null}
-          connected={environment?.connection.phase === "connected"}
-        />
-      </div>
+                <Settings2 size={17} />
+              </Link>
+              <Link to="/" className="sx-workspace-link">
+                <Terminal size={15} /> Workspace <ArrowRight size={14} />
+              </Link>
+            </div>
+          </header>
+          <CockpitEnvironment
+            key={environment?.environmentId ?? "disconnected"}
+            environmentId={environment?.environmentId ?? null}
+            connected={environment?.connection.phase === "connected"}
+          />
+        </div>
+      </RenderedAppearanceOverride>
     </SidebarInset>
   );
 }
@@ -605,11 +609,14 @@ function CockpitEnvironment({
           />
         )}
         {panel === "knowledge" && (
-          <SynthosKnowledge
-            environmentId={environmentId}
-            statuses={statuses}
-            activeWorkflow={selected}
-          />
+          <>
+            <SynthosKnowledge
+              environmentId={environmentId}
+              statuses={statuses}
+              activeWorkflow={selected}
+            />
+            <SynthosLibrary environmentId={environmentId} />
+          </>
         )}
         {panel === "tools" && <SynthosTools environmentId={environmentId} statuses={statuses} />}
         {panel === "devices" && (
