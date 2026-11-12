@@ -2,6 +2,7 @@
 
 ## Using T3 Code
 
+- [SynthOS product direction](./user/synthos-vision.md)
 - [Install T3 Code](./user/install.md)
 - [Messages and context](./user/composer.md)
 - [Working with threads](./user/thread-sidebar.md)
