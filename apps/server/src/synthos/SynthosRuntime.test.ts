@@ -29,7 +29,8 @@ import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as SynthosRuntime from "./SynthosRuntime.ts";
-import { createGchPacket, GCH_POLICY } from "./gchPolicy.ts";
+import * as GchPolicy from "./gchPolicy.ts";
+import { fixtureGchPolicy, fixtureGchRules, fixtureGchSources } from "./gchPolicy.testFixtures.ts";
 
 const threadId = ThreadId.make("thread:runtime-review");
 const projectId = ProjectId.make("project:runtime-review");
@@ -43,7 +44,7 @@ const modelSelection = {
 
 function makeAttempt(stage: "check" | "review"): SynthosAttempt {
   const role = stage === "check" ? "lead" : "reviewer";
-  const packet = createGchPacket({
+  const packet = GchPolicy.createGchPacket(fixtureGchPolicy.policy, {
     workflowId: "workflow:runtime-review",
     task: "Change the implementation and verify it",
     role,
@@ -79,8 +80,8 @@ function makeWorkflow(attempt: SynthosAttempt): SynthosWorkflow {
     projectId,
     title: "Runtime review",
     task: "Change the implementation and verify it",
-    policyHash: GCH_POLICY.sha256,
-    policyVersion: GCH_POLICY.version,
+    policyHash: fixtureGchPolicy.policy.sha256,
+    policyVersion: fixtureGchPolicy.policy.version,
     stage: attempt.stage,
     status: "running",
     revision: 1,
@@ -226,7 +227,12 @@ const fixture = Effect.gen(function* () {
   const snapshots = yield* Ref.make(new Map<string, string>());
   const gitRepository = yield* Ref.make(true);
   const launches = yield* Ref.make(0);
+  const prompts = yield* Ref.make<ReadonlyArray<string>>([]);
+  const gch = yield* Ref.make<GchPolicy.GchPolicyState>(fixtureGchPolicy);
   const layer = SynthosRuntime.layer.pipe(
+    Layer.provide(
+      Layer.succeed(GchPolicy.GchPolicy, GchPolicy.GchPolicy.of({ current: Ref.get(gch) })),
+    ),
     Layer.provide(Layer.mock(SynthosContext.SynthosContext)({ validate: () => Effect.void })),
     Layer.provide(
       Layer.mock(ProjectService.ProjectService)({
@@ -257,9 +263,12 @@ const fixture = Effect.gen(function* () {
     ),
     Layer.provide(
       Layer.mock(ThreadLaunchService.ThreadLaunchService)({
-        launch: () =>
+        launch: (input) =>
           Ref.get(projection).pipe(
             Effect.tap(() => Ref.update(launches, (count) => count + 1)),
+            Effect.tap(() =>
+              Ref.update(prompts, (texts) => [...texts, input.initialMessage?.text ?? ""]),
+            ),
             Effect.map((value) => ({
               threadId,
               projection: value,
@@ -290,7 +299,7 @@ const fixture = Effect.gen(function* () {
       }),
     ),
   );
-  return { now, projection, candidate, snapshots, gitRepository, launches, layer };
+  return { now, projection, candidate, snapshots, gitRepository, launches, prompts, gch, layer };
 });
 
 describe("SynthosRuntime evidence", () => {
@@ -321,7 +330,7 @@ describe("SynthosRuntime evidence", () => {
             assert.equal(result.operation, "launch");
           }
           assert.equal(yield* Ref.get(test.launches), 0);
-          const packet = createGchPacket({
+          const packet = GchPolicy.createGchPacket(fixtureGchPolicy.policy, {
             workflowId: "workflow:runtime-review",
             task: "Synthetic context",
             role: "lead",
@@ -388,6 +397,32 @@ describe("SynthosRuntime evidence", () => {
         assert.equal(yield* Ref.get(test.launches), 0);
       }).pipe(Effect.provide(test.layer));
     }),
+  );
+
+  it.effect(
+    "sends the verified GCH rules with every packet and refuses to launch without them",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* fixture;
+        yield* Effect.gen(function* () {
+          const runtime = yield* SynthosRuntime.SynthosRuntime;
+          const attempt = makeAttempt("check");
+          yield* Ref.set(
+            test.gch,
+            GchPolicy.unavailableGchPolicy(fixtureGchSources, "gch_rules_hash_mismatch"),
+          );
+          const error = yield* Effect.flip(runtime.launch(makeWorkflow(attempt), attempt));
+          assert.equal(error.operation, "launch");
+          assert.include(String(error.cause), "gch_rules_hash_mismatch");
+          assert.equal(yield* Ref.get(test.launches), 0);
+
+          yield* Ref.set(test.gch, fixtureGchPolicy);
+          yield* runtime.launch(makeWorkflow(attempt), attempt);
+          assert.deepEqual(yield* Ref.get(test.prompts), [
+            `${fixtureGchRules}\n\n${attempt.packetHtml}`,
+          ]);
+        }).pipe(Effect.provide(test.layer));
+      }),
   );
   it.effect(
     "uses the latest matching command outcome and refuses incomplete or failed verification",

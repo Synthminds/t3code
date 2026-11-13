@@ -18,7 +18,7 @@ import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import * as ServerRuntimeStartup from "../serverRuntimeStartup.ts";
 import * as SynthosWorkflow from "./SynthosWorkflow.ts";
-import { GCH_POLICY_INSPECTION } from "./gchPolicy.ts";
+import { fixtureGchPolicy } from "./gchPolicy.testFixtures.ts";
 import * as SynthosHttp from "./http.ts";
 
 class PolicyTestApi extends HttpApi.make("environment").add(EnvironmentHttpApi.groups.synthos) {}
@@ -34,7 +34,7 @@ it.effect("requires the exact read scope before exposing the host policy", () =>
         Layer.mock(SynthosWorkflow.SynthosWorkflow)({
           policy: Effect.sync(() => {
             policyReads += 1;
-            return GCH_POLICY_INSPECTION;
+            return fixtureGchPolicy.inspection;
           }),
         }),
       ),
@@ -76,7 +76,7 @@ it.effect("requires the exact read scope before exposing the host policy", () =>
     const response = yield* read();
     expect(response.status).toBe(200);
     const policy = yield* decodePolicy(yield* Effect.promise(() => response.json()));
-    expect(policy).toEqual(GCH_POLICY_INSPECTION);
+    expect(policy).toEqual(fixtureGchPolicy.inspection);
     expect(policyReads).toBe(1);
   }).pipe(Effect.scoped),
 );

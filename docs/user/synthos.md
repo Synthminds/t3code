@@ -77,6 +77,16 @@ The controller enforces persisted attempt and token reservations, bounded retrie
 
 Some GCH requirements still need enforcement beyond instructions: qualified worker guards and read-only boundaries, freezing test files before construction, construction proposals applied only by the lead, and live Jev/TypeSafe routing. T3's approval-required mode does not establish those guarantees. The current crew can edit its worktree directly. Autonomous publication and merging remain disabled; use the existing workspace controls to review and publish approved work.
 
+### Supply the private GCH rules
+
+The canonical rules text is private, so this repository pins only its fingerprint. On the host running the server, keep the text in a file outside any repository, set `SYNTHOS_GCH_RULES_PATH` to that file's absolute path, then restart the server. To create the file from a checkout made before the rules left the repository, run this in that checkout:
+
+```bash
+mkdir -p ~/.config/synthos && node -e 'process.stdout.write(require("./apps/server/src/synthos/gchPolicySources.json").canonicalRules)' > ~/.config/synthos/gch-rules.md
+```
+
+The file must hold exactly the pinned text; an added trailing newline does not match. Until it verifies, the inspector and `gch synthos policy` report `gch_rules_not_configured`, `gch_rules_unreadable` or `gch_rules_hash_mismatch`. Missions cannot be created or started, and a running mission blocks with that reason before its next dispatch. Correcting the file needs no restart: retry the blocked mission.
+
 ## Supply focused context
 
 Open **Context Deck** for a project to configure its memory sources and preview what a role will receive. Automatic recall starts disabled. Add approved Markdown notes or project folders using paths relative to the configured Obsidian vault, then enable recall. Include reviewed mission captures only in the projects where they are relevant. Add neighborhood folders for related knowledge that may help when fewer than three project notes match. The search stays within these configured paths.

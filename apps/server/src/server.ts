@@ -6,6 +6,7 @@ import * as Scheduler from "./scheduling/Scheduler.ts";
 import * as SynthosHttp from "./synthos/http.ts";
 import * as SynthosWorkflow from "./synthos/SynthosWorkflow.ts";
 import * as SynthosRuntime from "./synthos/SynthosRuntime.ts";
+import * as GchPolicy from "./synthos/gchPolicy.ts";
 import * as SynthosConnections from "./synthos-connections/SynthosConnections.ts";
 import * as SynthosConnectionsHttp from "./synthos-connections/http.ts";
 import * as SynthosKnowledge from "./synthos-knowledge/SynthosKnowledge.ts";
@@ -771,7 +772,9 @@ const layerMakeRoutes = Layer.mergeAll(
     PullRequestReviewGuideService.layer.pipe(Layer.provide(PullRequestReviewGuides.layer)),
   ),
   Layer.provide(Scheduler.layer),
-  Layer.provide(SynthosWorkflow.layer.pipe(Layer.provide(SynthosRuntime.layer))),
+  Layer.provide(
+    SynthosWorkflow.layer.pipe(Layer.provide(SynthosRuntime.layer), Layer.provide(GchPolicy.layer)),
+  ),
   Layer.provide(SynthosConnections.layerLive),
   Layer.provide(SynthosKnowledge.layer),
   Layer.provide(SynthosProfiles.layer),

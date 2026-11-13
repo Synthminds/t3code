@@ -17,7 +17,7 @@ import * as Schema from "effect/Schema";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
-import { GCH_POLICY } from "./gchPolicy.ts";
+import * as GchPolicy from "./gchPolicy.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 
 export class SynthosRuntimeError extends Schema.TaggedError<SynthosRuntimeError>()(
@@ -71,6 +71,7 @@ const make = Effect.gen(function* () {
   const checkpoints = yield* CheckpointStore.CheckpointStore;
   const projects = yield* ProjectService.ProjectService;
   const contexts = yield* SynthosContext.SynthosContext;
+  const gch = yield* GchPolicy.GchPolicy;
   const candidateRefFor = (key: string) =>
     CheckpointRef.make(
       `refs/t3/synthos/${NodeCrypto.createHash("sha256").update(key).digest("hex")}`,
@@ -122,8 +123,15 @@ const make = Effect.gen(function* () {
     const binding = workflow.bindings.find((entry) => entry.role === attempt.role)!;
     if (attempt.stage === "check" && workflow.worktreePath !== null)
       yield* capture(workflow.worktreePath, `${attempt.id}:before`);
+    const policy = yield* gch.current;
+    if (policy.status === "unavailable") {
+      return yield* new SynthosRuntimeError({
+        operation: "launch",
+        cause: new Error(policy.reason),
+      });
+    }
     if (
-      workflow.policyHash !== GCH_POLICY.sha256 ||
+      workflow.policyHash !== policy.policy.sha256 ||
       NodeCrypto.createHash("sha256").update(attempt.packetHtml).digest("hex") !==
         attempt.packetHash
     ) {
@@ -149,7 +157,7 @@ const make = Effect.gen(function* () {
         )
         .pipe(Effect.mapError((cause) => new SynthosRuntimeError({ operation: "launch", cause })));
     }
-    const prompt = `${GCH_POLICY.canonicalRules}\n\n${attempt.packetHtml}`;
+    const prompt = `${policy.policy.canonicalRules}\n\n${attempt.packetHtml}`;
     // Reserve against the full packet before dispatch. An oversized accumulated context is never silently truncated.
     if (Math.ceil(Buffer.byteLength(prompt, "utf8") / 3) > binding.inputTokenLimit) {
       return yield* new SynthosRuntimeError({

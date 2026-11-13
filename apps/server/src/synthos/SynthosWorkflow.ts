@@ -8,6 +8,7 @@ import type { SynthosContextManifest } from "@t3tools/contracts";
 import * as NodeCrypto from "node:crypto";
 import {
   SynthosContextError,
+  SynthosPolicyRulesUnavailableReason,
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
   CommandId,
@@ -33,7 +34,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as SynthosRuntime from "./SynthosRuntime.ts";
-import { createGchPacket, GCH_POLICY, GCH_POLICY_INSPECTION } from "./gchPolicy.ts";
+import * as GchPolicy from "./gchPolicy.ts";
 
 export class SynthosWorkflowError extends Schema.TaggedError<SynthosWorkflowError>()(
   "SynthosWorkflowError",
@@ -47,6 +48,7 @@ export class SynthosWorkflowError extends Schema.TaggedError<SynthosWorkflowErro
       "invalid_bindings",
       "candidate_changed",
       "storage",
+      ...SynthosPolicyRulesUnavailableReason.literals,
     ]),
     cause: Schema.optional(Schema.Defect()),
   },
@@ -144,6 +146,7 @@ function nextPlanningRole(workflow: Workflow): SynthosRole | undefined {
 }
 
 function freezePacket(
+  policy: GchPolicy.GchPolicySnapshot,
   workflow: Workflow,
   role: SynthosRole,
   stage: SynthosStage,
@@ -160,7 +163,7 @@ function freezePacket(
     (attempt) => attempt.candidateRef !== null,
   )?.candidateRef;
   const render = () =>
-    createGchPacket({
+    GchPolicy.createGchPacket(policy, {
       workflowId: workflow.id,
       task: workflow.task,
       role,
@@ -224,6 +227,7 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const runtime = yield* SynthosRuntime.SynthosRuntime;
   const contexts = yield* SynthosContext.SynthosContext;
+  const gch = yield* GchPolicy.GchPolicy;
   const providers = yield* Effect.serviceOption(ProviderRegistry.ProviderRegistry);
   const permit = yield* Semaphore.make(1);
   const storageError = (cause: unknown) => new SynthosWorkflowError({ reason: "storage", cause });
@@ -362,14 +366,18 @@ const make = Effect.gen(function* () {
             yield* sql`SELECT 1 FROM synthos_workflows WHERE workflow_id = ${input.workflowId}`;
           if (exists.length > 0)
             return yield* new SynthosWorkflowError({ reason: "idempotency_conflict" });
+          const gchState = yield* gch.current;
+          if (gchState.status === "unavailable")
+            return yield* new SynthosWorkflowError({ reason: gchState.reason });
+          const policy = gchState.policy;
           const now = yield* Clock.currentTimeMillis;
           const workflow: Workflow = {
             id: input.workflowId,
             projectId: input.projectId,
             title: input.title,
             task: input.task,
-            policyHash: GCH_POLICY.sha256,
-            policyVersion: GCH_POLICY.version,
+            policyHash: policy.sha256,
+            policyVersion: policy.version,
             stage: "intake",
             status: "proposed",
             revision: 0,
@@ -401,8 +409,8 @@ const make = Effect.gen(function* () {
             publication: { status: "not_requested", evidenceHash: null, candidateRef: null },
           };
           const json = yield* encodeWorkflow(workflow).pipe(Effect.mapError(storageError));
-          const policyJson = yield* encodePolicy(GCH_POLICY).pipe(Effect.mapError(storageError));
-          yield* sql`INSERT OR IGNORE INTO synthos_policy_snapshots (policy_hash, version, snapshot_json) VALUES (${GCH_POLICY.sha256}, ${GCH_POLICY.version}, ${policyJson})`;
+          const policyJson = yield* encodePolicy(policy).pipe(Effect.mapError(storageError));
+          yield* sql`INSERT OR IGNORE INTO synthos_policy_snapshots (policy_hash, version, snapshot_json) VALUES (${policy.sha256}, ${policy.version}, ${policyJson})`;
           yield* sql`INSERT INTO synthos_workflows (workflow_id, project_id, revision, status, updated_at, snapshot_json) VALUES (${workflow.id}, ${workflow.projectId}, 0, ${workflow.status}, ${now}, ${json})`;
           yield* sql`INSERT INTO synthos_workflow_events (workflow_id, revision, type, actor_id, at, stage, status) VALUES (${workflow.id}, 0, 'created', ${actor.id}, ${now}, ${workflow.stage}, ${workflow.status})`;
           yield* writeReceipt(input.commandId, actor.id, hash, workflow);
@@ -473,7 +481,15 @@ const make = Effect.gen(function* () {
         "budget_or_configuration_blocked",
         "system",
       );
-    if (workflow.policyHash !== GCH_POLICY.sha256)
+    const gchState = yield* gch.current;
+    if (gchState.status === "unavailable")
+      return yield* save(
+        { ...workflow, status: "blocked", blockReason: gchState.reason },
+        "policy_blocked",
+        "system",
+      );
+    const policy = gchState.policy;
+    if (workflow.policyHash !== policy.sha256)
       return yield* save(
         { ...workflow, status: "blocked", blockReason: "policy_snapshot_changed" },
         "policy_blocked",
@@ -528,6 +544,7 @@ const make = Effect.gen(function* () {
         while (true) {
           try {
             const frozen = freezePacket(
+              policy,
               {
                 ...workflow,
                 bindings: workflow.bindings.map((entry) => (entry.role === role ? binding : entry)),
@@ -538,7 +555,7 @@ const make = Effect.gen(function* () {
             );
             if (
               Math.ceil(
-                Buffer.byteLength(`${GCH_POLICY.canonicalRules}\n\n${frozen.html}`, "utf8") / 3,
+                Buffer.byteLength(`${policy.canonicalRules}\n\n${frozen.html}`, "utf8") / 3,
               ) > binding.inputTokenLimit
             )
               throw new Error("packet_budget_exceeded");
@@ -655,6 +672,13 @@ const make = Effect.gen(function* () {
       return role === undefined ? workflow : yield* reserve(workflow, workflow.stage, role);
     }
     if (active.status === "pending") {
+      const gchState = yield* gch.current;
+      if (gchState.status === "unavailable")
+        return yield* save(
+          { ...workflow, status: "blocked", blockReason: gchState.reason },
+          "policy_blocked",
+          "system",
+        );
       return yield* runtime.launch(workflow, active).pipe(
         Effect.matchEffect({
           onFailure: (error) =>
@@ -841,6 +865,9 @@ const make = Effect.gen(function* () {
             );
           } else if (input.action === "start") {
             if (workflow.status !== "proposed") return yield* invalid();
+            const gchState = yield* gch.current;
+            if (gchState.status === "unavailable")
+              return yield* new SynthosWorkflowError({ reason: gchState.reason });
             const missing = ["architect", "crew", "lead", "reviewer"].filter(
               (role) => !workflow.bindings.some((binding) => binding.role === role),
             );
@@ -999,7 +1026,7 @@ const make = Effect.gen(function* () {
     }
   }).pipe(permit.withPermits(1));
   return SynthosWorkflow.of({
-    policy: Effect.succeed(GCH_POLICY_INSPECTION),
+    policy: gch.current.pipe(Effect.map((state) => state.inspection)),
     create,
     list,
     get,

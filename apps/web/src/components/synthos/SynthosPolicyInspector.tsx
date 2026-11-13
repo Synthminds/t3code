@@ -50,8 +50,11 @@ export function SynthosPolicyInspector({
     policy && repository?.protocol === "https:"
       ? `${repository.href.replace(/\/$/, "")}/blob/${encodeURIComponent(policy.sourceCommit)}`
       : null;
+  // Hosts from before the rules moved out of the repository omit this field and always carry the rules.
+  const unavailable = policy?.rulesUnavailable;
   const matches = policy && workflow?.policyHash === policy.sha256;
-  const mismatch = Boolean(policy && workflow && !matches);
+  const mismatch = Boolean(policy && !unavailable && workflow && !matches);
+  const attention = mismatch || unavailable !== undefined;
 
   return (
     <details className="sx-panel sx-policy-inspector">
@@ -61,14 +64,16 @@ export function SynthosPolicyInspector({
           <strong>GCH operating core</strong>
           <small>Mission rules, provenance, and enforcement</small>
         </span>
-        <span className="sx-policy-version" role="status" data-mismatch={mismatch}>
+        <span className="sx-policy-version" role="status" data-mismatch={attention}>
           {!connected
             ? "HOST OFFLINE"
             : loading
               ? "LOADING…"
-              : mismatch
-                ? "POLICY MISMATCH"
-                : (policy?.version ?? "UNAVAILABLE")}
+              : unavailable
+                ? "RULES UNAVAILABLE"
+                : mismatch
+                  ? "POLICY MISMATCH"
+                  : (policy?.version ?? "UNAVAILABLE")}
         </span>
         <ChevronRight size={17} className="sx-policy-chevron" aria-hidden="true" />
       </summary>
@@ -93,15 +98,18 @@ export function SynthosPolicyInspector({
           </div>
         ) : policy ? (
           <>
-            <div className="sx-policy-binding" data-mismatch={mismatch}>
+            <div className="sx-policy-binding" data-mismatch={attention}>
               <strong>
-                {!workflow
-                  ? "Current host policy · no mission selected"
-                  : matches
-                    ? "Selected mission matches the current host policy"
-                    : "Selected mission uses a different policy"}
+                {unavailable
+                  ? "This host cannot start or advance GCH missions"
+                  : !workflow
+                    ? "Current host policy · no mission selected"
+                    : matches
+                      ? "Selected mission matches the current host policy"
+                      : "Selected mission uses a different policy"}
               </strong>
-              {workflow && !matches && (
+              {unavailable && <p role="alert">{unavailable.message}</p>}
+              {workflow && mismatch && (
                 <p role="alert">
                   These rules describe this host’s current policy, not the selected mission’s
                   original snapshot. Its pinned version is {workflow.policyVersion}.
@@ -121,7 +129,7 @@ export function SynthosPolicyInspector({
               <div>
                 <dt>Policy fingerprint</dt>
                 <dd>
-                  <code>{policy.sha256}</code>
+                  <code>{policy.sha256 ?? "Unavailable until the rules load"}</code>
                 </dd>
               </div>
               <div>
@@ -178,12 +186,14 @@ export function SynthosPolicyInspector({
               Construction agents currently edit directly. Freezing pre-existing tests before
               construction and restricting patch application to the lead remain to be implemented.
             </p>
-            <details className="sx-policy-document">
-              <summary>Read the injected GCH rules</summary>
-              <pre tabIndex={0} aria-label="Canonical GCH rules">
-                <code>{policy.canonicalRules}</code>
-              </pre>
-            </details>
+            {policy.canonicalRules !== null && (
+              <details className="sx-policy-document">
+                <summary>Read the injected GCH rules</summary>
+                <pre tabIndex={0} aria-label="Canonical GCH rules">
+                  <code>{policy.canonicalRules}</code>
+                </pre>
+              </details>
+            )}
             <details className="sx-policy-document">
               <summary>Preserved sources · {policy.sources.length} files</summary>
               <ul className="sx-policy-sources" tabIndex={0} aria-label="GCH source manifest">

@@ -26,7 +26,7 @@ import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
-import { GCH_POLICY_INSPECTION } from "../synthos/gchPolicy.ts";
+import { fixtureGchPolicy } from "../synthos/gchPolicy.testFixtures.ts";
 import { readSynthosInput, requestSynthos, type SynthosCliRequest } from "./synthos.ts";
 
 const origin = "http://127.0.0.1:43210";
@@ -546,7 +546,7 @@ describe("SynthOS CLI authenticated transport", () => {
               request,
               Response.json(
                 url.pathname.endsWith("policy")
-                  ? GCH_POLICY_INSPECTION
+                  ? fixtureGchPolicy.inspection
                   : url.pathname.endsWith("workflows")
                     ? { workflows: [] }
                     : { workflow, events: [] },
@@ -560,7 +560,7 @@ describe("SynthOS CLI authenticated transport", () => {
             Effect.provideService(HttpClient.HttpClient, client),
           );
         assert.deepEqual(yield* run({ type: "list" }), { workflows: [] });
-        assert.deepEqual(yield* run({ type: "policy" }), GCH_POLICY_INSPECTION);
+        assert.deepEqual(yield* run({ type: "policy" }), fixtureGchPolicy.inspection);
         assert.deepEqual(yield* run({ type: "get", workflowId: workflow.id }), {
           workflow,
           events: [],

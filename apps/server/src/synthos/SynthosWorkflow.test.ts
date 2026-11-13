@@ -19,6 +19,12 @@ import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 import workflowMigration from "../persistence/Migrations/073_SynthosWorkflows.ts";
 import policyMigration from "../persistence/Migrations/075_SynthosPolicySnapshots.ts";
+import * as GchPolicy from "./gchPolicy.ts";
+import {
+  fixtureGchFingerprint,
+  fixtureGchPolicy,
+  fixtureGchSources,
+} from "./gchPolicy.testFixtures.ts";
 import * as SynthosRuntime from "./SynthosRuntime.ts";
 import * as SynthosWorkflow from "./SynthosWorkflow.ts";
 const migration = Effect.andThen(workflowMigration, policyMigration);
@@ -59,6 +65,7 @@ const makeRuntime = Effect.gen(function* () {
   const stopFails = yield* Ref.make(false);
   const stopSettled = yield* Ref.make(true);
   const candidateValid = yield* Ref.make(true);
+  const gch = yield* Ref.make<GchPolicy.GchPolicyState>(fixtureGchPolicy);
   const runtime = SynthosRuntime.SynthosRuntime.of({
     verifyCandidate: () => Ref.get(candidateValid),
     launch: (_workflow, attempt) =>
@@ -94,6 +101,9 @@ const makeRuntime = Effect.gen(function* () {
   const layer = SynthosWorkflow.layer.pipe(
     Layer.provide(Layer.succeed(SynthosRuntime.SynthosRuntime, runtime)),
     Layer.provide(
+      Layer.succeed(GchPolicy.GchPolicy, GchPolicy.GchPolicy.of({ current: Ref.get(gch) })),
+    ),
+    Layer.provide(
       Layer.mock(SynthosContext.SynthosContext)({
         build: ({ projectId, role, task }) =>
           Effect.succeed(
@@ -123,6 +133,7 @@ const makeRuntime = Effect.gen(function* () {
     stopFails,
     stopSettled,
     candidateValid,
+    gch,
     layer,
   };
 });
@@ -202,6 +213,58 @@ describe("SynthOS workflow", () => {
           assert.equal((yield* Ref.get(test.launches)).length, 1);
         }).pipe(Effect.provide(test.layer));
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+  it.effect("refuses to create, start or dispatch work until the GCH rules verify", () =>
+    Effect.gen(function* () {
+      yield* migration;
+      const test = yield* makeRuntime;
+      const missing = GchPolicy.unavailableGchPolicy(fixtureGchSources, "gch_rules_not_configured");
+      yield* Effect.gen(function* () {
+        const service = yield* SynthosWorkflow.SynthosWorkflow;
+        yield* Ref.set(test.gch, missing);
+        assert.include(
+          (yield* Effect.flip(service.create(input, actor))).message,
+          "gch_rules_not_configured",
+        );
+        assert.equal((yield* service.policy).rulesUnavailable?.reason, "gch_rules_not_configured");
+
+        yield* Ref.set(test.gch, fixtureGchPolicy);
+        const created = yield* service.create(input, actor);
+        assert.equal(created.policyHash, fixtureGchFingerprint);
+        yield* Ref.set(test.gch, missing);
+        assert.include(
+          (yield* Effect.flip(dispatch(created, "start"))).message,
+          "gch_rules_not_configured",
+        );
+        assert.equal((yield* service.get(created.id)).workflow.status, "proposed");
+
+        yield* Ref.set(test.gch, fixtureGchPolicy);
+        yield* dispatch(created, "start");
+        yield* Ref.set(
+          test.gch,
+          GchPolicy.unavailableGchPolicy(fixtureGchSources, "gch_rules_hash_mismatch"),
+        );
+        yield* service.runDueWork;
+        const pending = (yield* service.get(created.id)).workflow;
+        assert.equal(pending.status, "blocked");
+        assert.equal(pending.blockReason, "gch_rules_hash_mismatch");
+        assert.deepEqual(yield* Ref.get(test.launches), []);
+
+        yield* Ref.set(test.gch, fixtureGchPolicy);
+        yield* dispatch(pending, "retry");
+        assert.equal((yield* Ref.get(test.launches)).length, 1);
+        yield* Ref.set(test.gch, missing);
+        yield* service.runDueWork;
+        yield* service.runDueWork;
+        const paused = (yield* service.get(created.id)).workflow;
+        assert.equal(paused.blockReason, "gch_rules_not_configured");
+        assert.deepEqual(
+          paused.attempts.map((attempt) => attempt.status),
+          ["completed"],
+        );
+        assert.equal((yield* Ref.get(test.launches)).length, 1);
+      }).pipe(Effect.provide(test.layer));
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
   it.effect("runs configured discovery and PM roles in the same durable planning sequence", () =>
     Effect.gen(function* () {

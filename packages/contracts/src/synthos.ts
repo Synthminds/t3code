@@ -7,15 +7,25 @@ import { ModelSelection } from "./modelSelection.ts";
 const ShortText = TrimmedNonEmptyString.check(Schema.isMaxLength(240));
 const Description = TrimmedNonEmptyString.check(Schema.isMaxLength(12000));
 const Sha256 = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/));
+export const SynthosPolicyRulesUnavailableReason = Schema.Literals([
+  "gch_rules_not_configured",
+  "gch_rules_unreadable",
+  "gch_rules_hash_mismatch",
+]);
+export type SynthosPolicyRulesUnavailableReason = typeof SynthosPolicyRulesUnavailableReason.Type;
 export const SynthosPolicy = Schema.Struct({
   version: ShortText,
-  sha256: Sha256,
+  // The fingerprint covers the private rules text, so both are null while the host lacks it.
+  sha256: Schema.NullOr(Sha256),
   applicationScope: Schema.Literal("synthos_workflows"),
   sourceRepository: TrimmedNonEmptyString.check(Schema.isMaxLength(1024)),
   sourceCommit: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/)),
   capturedAt: ShortText,
   canonicalRulesSha256: Sha256,
-  canonicalRules: Schema.String.check(Schema.isMaxLength(65536)),
+  canonicalRules: Schema.NullOr(Schema.String.check(Schema.isMaxLength(65536))),
+  rulesUnavailable: Schema.optionalKey(
+    Schema.Struct({ reason: SynthosPolicyRulesUnavailableReason, message: Description }),
+  ),
   sources: Schema.Array(
     Schema.Struct({
       path: TrimmedNonEmptyString.check(Schema.isMaxLength(1024)),
