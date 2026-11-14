@@ -9,11 +9,8 @@ import {
   selectMemories,
   selectRoutes,
 } from "../../apps/server/src/synthos-context/retrieval.ts";
-import {
-  createGchPacket,
-  GCH_POLICY,
-  GCH_POLICY_INSPECTION,
-} from "../../apps/server/src/synthos/gchPolicy.ts";
+import { createGchPacket, verifyGchRules } from "../../apps/server/src/synthos/gchPolicy.ts";
+import gchSources from "../../apps/server/src/synthos/gchPolicySources.json" with { type: "json" };
 import { cases } from "./cases.ts";
 import { grade } from "./grade.ts";
 
@@ -32,6 +29,14 @@ if (!values.out)
 const selected = values.case ? cases.filter((entry) => values.case!.includes(entry.id)) : cases;
 if (selected.length === 0 || values.case?.some((id) => !cases.some((entry) => entry.id === id)))
   throw new Error("Unknown or empty case selection.");
+const rulesPath = process.env.SYNTHOS_GCH_RULES_PATH;
+if (!rulesPath)
+  throw new Error(
+    "Set SYNTHOS_GCH_RULES_PATH to the private GCH rules file (docs/user/synthos.md).",
+  );
+const gch = verifyGchRules(gchSources, await NodeFSP.readFile(rulesPath, "utf8"));
+if (gch.status === "unavailable") throw new Error(gch.inspection.rulesUnavailable?.message);
+const policy = gch.policy;
 const routes = parseRouting(
   await NodeFSP.readFile(new URL("../../ROUTING.md", import.meta.url), "utf8"),
 );
@@ -40,7 +45,7 @@ const rows = selected.flatMap((entry) => {
   const routed = selectRoutes(routes, entry.task, entry.role);
   return (["packet-only-baseline", "routed-recall"] as const).map((variant) => {
     const current = variant === "routed-recall";
-    const packet = createGchPacket({
+    const packet = createGchPacket(policy, {
       workflowId: "synthetic-context-eval",
       task: entry.task,
       role: entry.role,
@@ -67,13 +72,13 @@ const rows = selected.flatMap((entry) => {
       memoryBytes: current ? memories.bytes : 0,
       packetBytes: Buffer.byteLength(packet.html, "utf8"),
       estimatedInputTokens: Math.ceil(
-        Buffer.byteLength(`${GCH_POLICY.canonicalRules}\n\n${packet.html}`, "utf8") / 3,
+        Buffer.byteLength(`${policy.canonicalRules}\n\n${packet.html}`, "utf8") / 3,
       ),
       packetHash: packet.sha256,
       policyIntact:
-        packet.policyHash === GCH_POLICY.sha256 &&
-        NodeCrypto.createHash("sha256").update(GCH_POLICY.canonicalRules).digest("hex") ===
-          GCH_POLICY_INSPECTION.canonicalRulesSha256,
+        packet.policyHash === policy.sha256 &&
+        NodeCrypto.createHash("sha256").update(policy.canonicalRules).digest("hex") ===
+          gchSources.canonicalRulesSha256,
     };
     return {
       id: entry.id,

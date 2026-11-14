@@ -9,7 +9,7 @@ pnpm synthos-context --out runs/context
 pnpm synthos-context --out runs/context-next --baseline runs/context/results.json
 ```
 
-Use `--case <id>` to select cases. `results.json` contains selection decisions, omissions, hashes, byte counts, input-token estimates, and scores. `summary.json` retains an optional prior run for comparison. The command fails if the routed variant misses an expected source, supplies excluded material, exceeds bounds, or loses the pinned policy. Baseline failures on new capabilities are expected; they are not regressions.
+The run needs the private GCH rules: set `SYNTHOS_GCH_RULES_PATH` as described in `docs/user/synthos.md`, or put it in the root `.env`. Use `--case <id>` to select cases. `results.json` contains selection decisions, omissions, hashes, byte counts, input-token estimates, and scores. `summary.json` retains an optional prior run for comparison. The command fails if the routed variant misses an expected source, supplies excluded material, exceeds bounds, or loses the pinned policy. Baseline failures on new capabilities are expected; they are not regressions.
 
 The fixtures cover project-first recall, neighborhood suppression when three project notes qualify, an unrelated-memory control, cross-boundary routing, and duplicate notes. Filesystem permissions, stale-source races, persistence, and dispatch integrity are exercised by server tests. The grader's negative controls run in `run.test.ts`.
 
